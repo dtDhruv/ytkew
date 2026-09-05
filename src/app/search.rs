@@ -260,7 +260,7 @@ impl App {
         tokio::task::spawn_blocking(move || {
             let version = crate::player::extractor_version(&path);
             let advice =
-                crate::player::staleness_advice(version.as_deref(), crate::player::today_days());
+                crate::player::staleness_advice(version.as_deref(), crate::player::today());
             let _ = tx.send(AppMsg::Error(advice));
         });
     }

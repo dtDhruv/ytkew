@@ -147,7 +147,7 @@ knowing about:
 
 | Lint | Why |
 |---|---|
-| `clippy::unwrap_used` | A music player has no business panicking. Tests are exempt at the crate root, where asserting is the point. |
+| `clippy::unwrap_used`, `expect_used` | A music player has no business panicking. Tests are exempt at the crate root, where asserting is the point. |
 | `unsafe_op_in_unsafe_fn` | `unsafe` is used deliberately in `art/terminal.rs` for termios and ioctl. Each block should say why; none should appear unnoticed. |
 | `unreachable_pub` | Keeps the public surface honest. |
 | `await_holding_lock` | The event loop is async and holds locks around IO; this catches the deadlock before it happens. |
@@ -163,6 +163,24 @@ anyone picked.
 Naming is [RFC 430](https://rust-lang.github.io/rfcs/0430-finalizing-naming-conventions.html)
 and the compiler enforces it; idiom is whatever clippy accepts. The rest is
 this project's own, and worth knowing before you write much:
+
+**Reach for a crate before writing it yourself.** The tree already leans on
+`which`, `time`, `anyhow`, `clap` and `dirs` for things that look small until
+you need the edge cases. Hand-rolling is a decision that has to earn itself,
+and the comment above it should say what it earned — `art/sixel.rs` is
+hand-rolled because chafa sizes its output from a TTY query it cannot make
+through a pipe, and that reason is written down where the code is.
+
+**Modules use the 2018 layout.** `src/app.rs` alongside `src/app/`, not
+`src/app/mod.rs`. Both work; picking one and keeping to it is the point.
+
+**Errors are `anyhow::Result` with `.context()`.** ytkew is an application
+that exposes a library for testing, not a library anyone depends on, so there
+is no typed error enum. `src/lib.rs` says so, in case that ever changes.
+
+**Nothing in shipping code panics.** `unwrap` and `expect` are both denied
+outside tests. If a thing genuinely cannot fail, say why in a comment and
+return a `Result` anyway — the player has no business taking itself down.
 
 **Comments explain why, not what.** The code already says what it does. A
 comment earns its place when it records a decision, a constraint, or a

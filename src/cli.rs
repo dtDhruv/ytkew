@@ -155,7 +155,7 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
             let version = crate::player::extractor_version(&path);
             let age = version
                 .as_deref()
-                .and_then(|v| crate::player::version_age_days(v, crate::player::today_days()));
+                .and_then(|v| crate::player::version_age_days(v, crate::player::today()));
             let note = match (version.as_deref(), age) {
                 (Some(v), Some(d)) if d > crate::player::STALE_AFTER_DAYS => {
                     format!("{v} -- {d} days old, UPDATE IT (`yt-dlp -U`)")

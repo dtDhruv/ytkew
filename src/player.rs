@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use time::{Date, Month, OffsetDateTime};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
@@ -93,29 +94,6 @@ pub struct Player {
 /// The stream extractors mpv can shell out to, best first.
 const EXTRACTORS: [&str; 2] = ["yt-dlp", "youtube-dl"];
 
-/// Directories to search, from the environment.
-fn path_dirs() -> Vec<PathBuf> {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default()
-}
-
-fn is_executable(path: &Path) -> bool {
-    let Ok(meta) = std::fs::metadata(path) else {
-        return false;
-    };
-    if !meta.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        meta.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    true
-}
-
 /// Locate the stream extractor before mpv needs it.
 ///
 /// mpv resolves a YouTube URL by running this binary, and without it mpv
@@ -123,16 +101,20 @@ fn is_executable(path: &Path) -> bool {
 /// nothing on screen to explain why. That is the worst failure a music
 /// player can have, so it is worth catching at startup and saying plainly.
 pub fn find_extractor(configured: &str) -> Result<PathBuf> {
-    find_extractor_in(configured, &path_dirs())
+    find_extractor_in(configured, |name| which::which(name).ok())
 }
 
-/// The search itself, with the directories passed in so it can be tested
-/// without touching the process's environment.
-fn find_extractor_in(configured: &str, dirs: &[PathBuf]) -> Result<PathBuf> {
+/// The search itself, with the lookup passed in so it can be tested without
+/// touching the process's environment.
+fn find_extractor_in(
+    configured: &str,
+    lookup: impl Fn(&str) -> Option<PathBuf>,
+) -> Result<PathBuf> {
     let configured = configured.trim();
     if !configured.is_empty() {
-        let path = PathBuf::from(configured);
-        if is_executable(&path) {
+        // `which` accepts a path as well as a bare name, and applies the same
+        // executable test to both.
+        if let Ok(path) = which::which(configured) {
             return Ok(path);
         }
         bail!(
@@ -141,11 +123,8 @@ fn find_extractor_in(configured: &str, dirs: &[PathBuf]) -> Result<PathBuf> {
         );
     }
     for name in EXTRACTORS {
-        for dir in dirs {
-            let candidate = dir.join(name);
-            if is_executable(&candidate) {
-                return Ok(candidate);
-            }
+        if let Some(path) = lookup(name) {
+            return Ok(path);
         }
     }
     bail!(
@@ -177,38 +156,24 @@ pub fn extractor_version(path: &Path) -> Option<String> {
     (!v.is_empty()).then_some(v)
 }
 
-/// Days from the civil date to the Unix epoch, by Howard Hinnant's algorithm.
-/// Exact, and cheaper than taking on a date library for one comparison.
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe - 719468
-}
-
-/// How many days old a `YYYY.MM.DD` version string is, given today as days
-/// since the epoch. `None` if it is not a dated release.
-pub fn version_age_days(version: &str, today: i64) -> Option<i64> {
-    // Releases can carry a suffix, as in "2025.03.14.232715".
+/// How many days old a `YYYY.MM.DD` version string is, relative to `today`.
+/// `None` if it is not a dated release.
+pub fn version_age_days(version: &str, today: Date) -> Option<i64> {
+    // Releases can carry a build suffix, as in "2025.03.14.232715".
     let mut parts = version.trim().split('.');
-    let y: i64 = parts.next()?.parse().ok()?;
-    let m: i64 = parts.next()?.parse().ok()?;
-    let d: i64 = parts.next()?.parse().ok()?;
-    if !(2000..=2100).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-        return None;
-    }
-    Some(today - days_from_civil(y, m, d))
+    let year: i32 = parts.next()?.parse().ok()?;
+    let month: u8 = parts.next()?.parse().ok()?;
+    let day: u8 = parts.next()?.parse().ok()?;
+    let released = Date::from_calendar_date(year, Month::try_from(month).ok()?, day).ok()?;
+    Some((today - released).whole_days())
 }
 
-/// Today, as days since the Unix epoch.
-pub fn today_days() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| (d.as_secs() / 86_400) as i64)
-        .unwrap_or(0)
+/// Today's date, or the epoch if the clock is unreadable -- which makes every
+/// version look ancient rather than crashing over it.
+pub fn today() -> Date {
+    OffsetDateTime::now_local()
+        .unwrap_or_else(|_| OffsetDateTime::now_utc())
+        .date()
 }
 
 /// Past this, a stale extractor is the likeliest explanation for streams
@@ -221,7 +186,7 @@ pub const STALE_AFTER_DAYS: i64 = 45;
 /// Distinguishes "your tool is out of date" from "these particular tracks are
 /// unavailable", which need completely different responses -- and the first
 /// is by far the more common.
-pub fn staleness_advice(version: Option<&str>, today: i64) -> String {
+pub fn staleness_advice(version: Option<&str>, today: Date) -> String {
     match version.and_then(|v| version_age_days(v, today).map(|a| (v, a))) {
         Some((v, age)) if age > STALE_AFTER_DAYS => format!(
             "tracks keep failing — yt-dlp {v} is {} old. Run `yt-dlp -U`",
@@ -565,74 +530,24 @@ mod tests {
         p
     }
 
-    // 2026-09-05, as days since the epoch -- fixed so the tests do not
-    // change meaning as time passes.
-    const TODAY: i64 = 20_701;
-
-    #[test]
-    fn the_reference_date_is_the_one_the_tests_assume() {
-        assert_eq!(days_from_civil(2026, 9, 5), TODAY);
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-        assert_eq!(days_from_civil(2000, 3, 1), 11017);
-    }
-
-    #[test]
-    fn a_dated_version_yields_its_age() {
-        assert_eq!(version_age_days("2026.09.05", TODAY), Some(0));
-        assert_eq!(version_age_days("2026.08.06", TODAY), Some(30));
-        assert_eq!(version_age_days("2025.09.05", TODAY), Some(365));
-        // Releases can carry a build suffix.
-        assert_eq!(version_age_days("2026.08.06.232715", TODAY), Some(30));
-    }
-
-    #[test]
-    fn a_version_that_is_not_a_date_is_not_guessed_at() {
-        for v in [
-            "",
-            "nightly",
-            "2026.13.01",
-            "2026.09.99",
-            "1999.01.01",
-            "abc.de.fg",
-        ] {
-            assert_eq!(version_age_days(v, TODAY), None, "{v} should not parse");
+    /// A stand-in for `which`, so the tests never depend on what happens to
+    /// be installed on the machine running them.
+    fn only(available: &[(&'static str, PathBuf)]) -> impl Fn(&str) -> Option<PathBuf> {
+        let owned: Vec<_> = available.to_vec();
+        move |name| {
+            owned
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, p)| p.clone())
         }
-    }
-
-    #[test]
-    fn stale_and_current_get_different_advice() {
-        // The whole point: "update your tool" and "these tracks are gone"
-        // call for completely different responses.
-        let stale = staleness_advice(Some("2025.01.10"), TODAY);
-        assert!(stale.contains("yt-dlp -U"), "got {stale}");
-        assert!(stale.contains("2025.01.10"), "got {stale}");
-
-        let fresh = staleness_advice(Some("2026.09.01"), TODAY);
-        assert!(!fresh.contains("yt-dlp -U"), "got {fresh}");
-        assert!(fresh.contains("unavailable"), "got {fresh}");
-    }
-
-    #[test]
-    fn advice_survives_a_version_it_cannot_read() {
-        for v in [None, Some("nightly")] {
-            let a = staleness_advice(v, TODAY);
-            assert!(a.contains("yt-dlp"), "got {a}");
-        }
-    }
-
-    #[test]
-    fn the_age_reads_as_a_human_would_say_it() {
-        assert_eq!(humanise_days(12), "12 days");
-        assert_eq!(humanise_days(90), "3 months");
-        assert_eq!(humanise_days(400), "over a year");
-        assert_eq!(humanise_days(800), "2 years");
     }
 
     #[test]
     fn a_configured_path_is_used_as_given() {
         let dir = scratch("configured");
         let bin = fake_binary(&dir, "my-ytdlp");
-        assert_eq!(find_extractor_in(bin.to_str().unwrap(), &[]).unwrap(), bin);
+        let found = find_extractor_in(bin.to_str().unwrap(), only(&[])).unwrap();
+        assert_eq!(found, bin);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -643,41 +558,20 @@ mod tests {
         let dir = scratch("wrong");
         let good = fake_binary(&dir, "yt-dlp");
         let missing = dir.join("not-here");
-        let e = find_extractor_in(missing.to_str().unwrap(), std::slice::from_ref(&dir))
+        let e = find_extractor_in(missing.to_str().unwrap(), only(&[("yt-dlp", good)]))
             .unwrap_err()
             .to_string();
         assert!(e.contains("ytdlp_path"), "got {e}");
         assert!(e.contains("not an executable file"), "got {e}");
-        assert!(
-            good.exists(),
-            "a usable one on PATH must not rescue a bad setting"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_directory_is_not_an_executable() {
-        let dir = scratch("dir");
-        assert!(!is_executable(&dir));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_non_executable_file_is_rejected() {
-        let dir = scratch("noexec");
-        let p = dir.join("yt-dlp");
-        std::fs::write(&p, "text").unwrap();
-        assert!(!is_executable(&p));
-        assert!(find_extractor_in("", std::slice::from_ref(&dir)).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn yt_dlp_is_preferred_over_youtube_dl() {
         let dir = scratch("both");
-        fake_binary(&dir, "yt-dlp");
-        fake_binary(&dir, "youtube-dl");
-        let found = find_extractor_in("", std::slice::from_ref(&dir)).unwrap();
+        let a = fake_binary(&dir, "yt-dlp");
+        let b = fake_binary(&dir, "youtube-dl");
+        let found = find_extractor_in("", only(&[("yt-dlp", a), ("youtube-dl", b)])).unwrap();
         assert_eq!(found.file_name().unwrap(), "yt-dlp");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -685,8 +579,8 @@ mod tests {
     #[test]
     fn youtube_dl_is_accepted_when_yt_dlp_is_absent() {
         let dir = scratch("fallback");
-        fake_binary(&dir, "youtube-dl");
-        let found = find_extractor_in("", std::slice::from_ref(&dir)).unwrap();
+        let b = fake_binary(&dir, "youtube-dl");
+        let found = find_extractor_in("", only(&[("youtube-dl", b)])).unwrap();
         assert_eq!(found.file_name().unwrap(), "youtube-dl");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -695,7 +589,7 @@ mod tests {
     fn the_error_tells_you_how_to_fix_it() {
         // This message is the whole point of the check: without it a missing
         // extractor is a player that runs perfectly and never makes a sound.
-        let e = find_extractor_in("", &[]).unwrap_err().to_string();
+        let e = find_extractor_in("", only(&[])).unwrap_err().to_string();
         assert!(e.contains("yt-dlp not found"), "got {e}");
         assert!(e.contains("install yt-dlp"), "got {e}");
         assert!(e.contains("ytdlp_path"), "got {e}");

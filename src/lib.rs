@@ -24,8 +24,17 @@
 //! [`config::Action`]s, and [`ui::views::draw`] renders a frame from the
 //! current [`app::App`].
 
+//! # A note on the shape of this crate
+//!
+//! ytkew is an application that happens to expose a library, not a library
+//! that happens to ship a binary. `lib.rs` exists so the code can be tested
+//! and documented, not so anyone can depend on it. That is why errors are
+//! [`anyhow::Error`] throughout rather than a typed enum: nothing downstream
+//! needs to match on them, and a binary gains nothing from the ceremony. If
+//! that ever changes, the API layer is where typed errors would start.
+
 // Tests assert; unwrapping there is the clearest way to say "this must hold".
-#![cfg_attr(test, allow(clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod api;
 pub mod app;

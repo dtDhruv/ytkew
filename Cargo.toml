@@ -37,6 +37,10 @@ unicode-width = "0.2"
 rand = "0.10"
 futures = "0.3"
 libc = "0.2"
+which = "8"
+# Already in the tree via ratatui, so this is close to free -- and beats
+# hand-rolling calendar arithmetic.
+time = { version = "0.3", features = ["local-offset"] }
 mpris-server = { version = "0.10", features = ["tokio"] }
 base64 = "0.23.1"
 png = "0.18.1"
@@ -55,6 +59,8 @@ unreachable_pub = "warn"
 # A music player has no business panicking. Tests are exempt at the crate
 # root, where asserting is the point.
 unwrap_used = "warn"
+# Same reasoning. A message does not make a panic acceptable in a player.
+expect_used = "warn"
 # Debugging leftovers.
 dbg_macro = "warn"
 todo = "warn"
