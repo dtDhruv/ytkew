@@ -10,7 +10,14 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Linux is where ytkew is developed; macOS is here so "it should work
+    # there" stops being a guess. Everything it needs is POSIX, but nothing
+    # was proving it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
