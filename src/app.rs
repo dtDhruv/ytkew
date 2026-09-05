@@ -111,6 +111,7 @@ pub struct HitRegions {
 pub enum MenuItem {
     PlayAll,
     Renderer,
+    Theme,
     Shuffle,
     Repeat,
     ClearQueue,
@@ -128,15 +129,30 @@ enum MenuOutcome {
     Run(Action),
 }
 
-pub const MENU_ITEMS: [MenuItem; 7] = [
+pub const MENU_ITEMS: [MenuItem; 8] = [
     MenuItem::PlayAll,
     MenuItem::Renderer,
+    MenuItem::Theme,
     MenuItem::Shuffle,
     MenuItem::Repeat,
     MenuItem::ClearQueue,
     MenuItem::Help,
     MenuItem::Quit,
 ];
+
+/// The palette a theme name resolves to. `cover` has no fixed colours -- it
+/// starts from the accent and is replaced once artwork loads.
+fn theme_palette(name: &str, cfg: &Config, accent: u8) -> Palette {
+    if name.eq_ignore_ascii_case("custom") {
+        if let Some(p) = crate::theme::from_hex(&cfg.theme_colors) {
+            return p;
+        }
+    }
+    match crate::theme::find(name) {
+        Some(t) => t.palette(),
+        None => Palette::from_ansi(accent),
+    }
+}
 
 /// How the cover is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -258,6 +274,8 @@ pub struct App {
     /// Whether album art is showing. `b` toggles this; the renderer is a
     /// separate setting, so one key does one thing.
     pub cover_visible: bool,
+    /// Active theme name. "cover" means take the colours from the artwork.
+    pub theme: String,
 
     /// btop-style overlay menu: escape opens it, q still quits outright.
     pub menu_open: bool,
@@ -305,6 +323,13 @@ impl App {
         // First run falls back to the config's default; after that the
         // remembered toggle wins.
         let state_cover_visible = state.cover_visible && cfg.cover_enabled;
+        // A theme picked at runtime outranks the config.
+        let active_theme = if state.theme.is_empty() {
+            cfg.theme.clone()
+        } else {
+            state.theme.clone()
+        };
+        let start_palette = theme_palette(&active_theme, &cfg, cfg_accent);
         // Resolve the cell size before the TUI starts, since the CSI query
         // needs a quiet terminal.
         let (cfg_cell_px, cell_source) = crate::sixel::detect_cell_size(match cfg.cell_px {
@@ -325,7 +350,7 @@ impl App {
             queue,
             covers,
             view: View::Track,
-            palette: Palette::from_ansi(cfg_accent),
+            palette: start_palette,
             cover: None,
             cover_for: None,
             queue_sel: 0,
@@ -349,6 +374,7 @@ impl App {
             mpris: None,
             hits: HitRegions::default(),
             cover_visible: state_cover_visible,
+            theme: active_theme,
             menu_open: false,
             menu_sel: 0,
             pending_play: None,
@@ -358,6 +384,34 @@ impl App {
             mpv_pos: 0,
             tx,
         }
+    }
+
+    /// Step to the next theme, and repaint any artwork so a kitty placement
+    /// does not keep the previous theme's framing around it.
+    pub fn cycle_theme(&mut self) {
+        self.theme = crate::theme::next(&self.theme).to_string();
+        self.apply_theme();
+        self.notify(format!("theme: {}", self.theme));
+    }
+
+    /// Recompute the palette for the current theme. Under `cover` this waits
+    /// for artwork; the accent stands in until then.
+    fn apply_theme(&mut self) {
+        if self.theme.eq_ignore_ascii_case(crate::theme::COVER) {
+            // Fall back to the cover we already have, if any.
+            self.palette = match &self.cover {
+                Some(c) => c.palette,
+                None => Palette::from_ansi(self.cfg.accent_color),
+            };
+        } else {
+            self.palette = theme_palette(&self.theme, &self.cfg, self.cfg.accent_color);
+        }
+        self.invalidate_sixel();
+    }
+
+    /// True when colours should follow the artwork.
+    fn theme_follows_cover(&self) -> bool {
+        self.theme.eq_ignore_ascii_case(crate::theme::COVER)
     }
 
     /// Step to the next art renderer, leaving visibility alone.
@@ -758,6 +812,7 @@ impl App {
                 [0, 0]
             },
             cover_visible: self.cover_visible,
+            theme: self.theme.clone(),
             shuffle: self.queue.shuffle,
             repeat: match self.queue.repeat {
                 RepeatMode::All => "all".into(),
@@ -980,7 +1035,7 @@ impl App {
             }
             AppMsg::Cover { video_id, cover } => {
                 if self.cover_for.as_deref() == Some(video_id.as_str()) {
-                    if self.cfg.color_from_cover {
+                    if self.theme_follows_cover() {
                         self.palette = cover.palette;
                     }
                     self.cover = Some(*cover);
@@ -1016,6 +1071,7 @@ impl App {
                 self.cfg.cover_mode.name(),
                 if self.cover_visible { "shown" } else { "hidden" }
             ),
+            MenuItem::Theme => format!("Theme: {}", self.theme),
             MenuItem::Shuffle => {
                 format!("Shuffle: {}", if self.queue.shuffle { "on" } else { "off" })
             }
@@ -1059,6 +1115,7 @@ impl App {
                 match item {
                     MenuItem::PlayAll => self.play_all_in_context(),
                     MenuItem::Renderer => self.cycle_renderer(),
+                    MenuItem::Theme => self.cycle_theme(),
                     MenuItem::Shuffle => return MenuOutcome::Run(Action::Shuffle),
                     MenuItem::Repeat => return MenuOutcome::Run(Action::ToggleRepeat),
                     MenuItem::ClearQueue => return MenuOutcome::Run(Action::ClearQueue),
@@ -1271,6 +1328,7 @@ impl App {
             Action::ToggleLike => self.like_current(),
             Action::StartRadio => self.radio_from_current(),
             Action::PlayAll => self.play_all_in_context(),
+            Action::CycleTheme => self.cycle_theme(),
             Action::ToggleMenu => {
                 self.menu_open = !self.menu_open;
                 self.menu_sel = 0;

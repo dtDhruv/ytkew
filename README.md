@@ -147,6 +147,7 @@ kew's bindings, unchanged where they made sense.
 | `r` | repeat (off → all → one) |
 | `v` | cycle visualizer (bars → braille → off) |
 | `b` | show / hide album art |
+| `t` | cycle colour theme |
 | `.` | like current track |
 | `R` | start radio from current track |
 | `enter` | add to queue (plays if idle) |

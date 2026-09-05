@@ -16,6 +16,7 @@ mod palette;
 mod player;
 mod queue;
 mod sixel;
+mod theme;
 mod ui;
 mod visual;
 

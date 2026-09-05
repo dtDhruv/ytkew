@@ -49,6 +49,8 @@ pub enum Action {
     PlayAll,
     /// Open or close the menu overlay.
     ToggleMenu,
+    /// Step to the next colour theme.
+    CycleTheme,
     /// Shrink the assumed cell size, making sixel art smaller.
     CoverSmaller,
     /// Grow the assumed cell size, making sixel art larger.
@@ -163,7 +165,13 @@ pub struct Config {
     pub initial_volume: f64,
     pub volume_step: f64,
     pub seek_step: f64,
-    /// Derive accent colors from the album cover, like kew's chroma mode.
+    /// Theme name: "cover" to take colours from the album art, one of the
+    /// built-ins, or "custom" with `theme_colors` below.
+    pub theme: String,
+    /// Three `#rrggbb` values -- borders, secondary text, accent -- used when
+    /// `theme = "custom"`.
+    pub theme_colors: Vec<String>,
+    /// Superseded by `theme = "cover"`; kept so older configs still load.
     pub color_from_cover: bool,
     /// Fallback accent when there's no cover (kew defaults to ANSI 6, cyan).
     pub accent_color: u8,
@@ -187,6 +195,8 @@ impl Default for Config {
             initial_volume: 100.0,
             volume_step: 5.0,
             seek_step: 5.0,
+            theme: crate::theme::COVER.to_string(),
+            theme_colors: Vec::new(),
             color_from_cover: true,
             accent_color: 6,
             save_repeat_shuffle: false,
@@ -224,7 +234,7 @@ impl Config {
     }
 }
 
-const DEFAULT_CONFIG_TOML: &str = r#"# ytkew configuration. Edit freely -- ytkew only reads this file.
+const DEFAULT_CONFIG_TOML: &str = r##"# ytkew configuration. Edit freely -- ytkew only reads this file.
 # Runtime state (volume, shuffle, repeat) is kept separately in state.toml.
 
 visualizer_height = 6
@@ -244,8 +254,19 @@ cell_px = [0, 0]              # cell size in px for sixel. [0,0] = unset.
                               # until you see sixel, then `[` and `]` to
                               # resize until it fits. It saves automatically.
 cover_enabled = true
-color_from_cover = true       # derive the theme from album art
-accent_color = 6              # ANSI index, used when color_from_cover = false
+
+# Colours. "cover" takes them from the album art, which is the default and
+# what kew does. Or pick a built-in:
+#   gruvbox  nord  dracula  catppuccin  tokyonight
+#   everforest  rosepine  solarized  matrix  mono
+# `t` cycles at runtime and remembers your choice.
+theme = "cover"
+
+# With theme = "custom", these three are borders, secondary text, accent.
+# theme = "custom"
+# theme_colors = ["#504945", "#d5c4a1", "#fabd2f"]
+
+accent_color = 6              # ANSI index, used only as a last resort
 
 initial_volume = 100.0        # only applies before state.toml exists
 volume_step = 5.0
@@ -254,7 +275,7 @@ seek_step = 5.0
 autoplay_radio = true         # append a radio mix behind a played search hit
 save_repeat_shuffle = false   # remember shuffle/repeat across restarts
 hide_help = false
-"#;
+"##;
 
 /// Things the app owns and rewrites: transport state that should survive a
 /// restart. Kept apart from `Config` so user edits are never clobbered.
@@ -268,6 +289,8 @@ pub struct State {
     pub cover_cell: [u16; 2],
     /// Whether album art is showing. Toggled with `b` and remembered.
     pub cover_visible: bool,
+    /// Theme chosen at runtime with `t`. Empty means "use the config".
+    pub theme: String,
 }
 
 impl Default for State {
@@ -278,6 +301,7 @@ impl Default for State {
             repeat: "off".into(),
             cover_cell: [0, 0],
             cover_visible: true,
+            theme: String::new(),
         }
     }
 }
@@ -349,6 +373,7 @@ impl Default for Keymap {
             (Char('r'), NONE, ToggleRepeat),
             (Char('v'), NONE, CycleVisualizer),
             (Char('b'), NONE, ToggleAscii),
+            (Char('t'), NONE, CycleTheme),
             (Char('.'), NONE, ToggleLike),
             (Char('R'), SHIFT, StartRadio),
             (Char('['), NONE, CoverSmaller),
@@ -601,6 +626,7 @@ mod tests {
             repeat: "all".into(),
             cover_cell: [12, 24],
             cover_visible: false,
+            theme: "nord".into(),
         };
         saved.save(&dir).unwrap();
         let back = State::load(&dir, &cfg);
@@ -609,6 +635,7 @@ mod tests {
         assert_eq!(back.repeat, "all");
         assert_eq!(back.cover_cell, [12, 24], "tuned cell size must persist");
         assert!(!back.cover_visible, "the b toggle must persist");
+        assert_eq!(back.theme, "nord", "the chosen theme must persist");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

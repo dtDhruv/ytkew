@@ -552,6 +552,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
             ("s", "shuffle"),
             ("r", "repeat"),
             ("m", "lyrics"),
+            ("t", "theme"),
             ("esc", "menu"),
         ],
         View::Queue => &[
@@ -931,7 +932,8 @@ fn draw_help(f: &mut Frame, area: Rect, app: &App) {
         ("Shuffle", k(Shuffle)),
         ("Repeat (off/all/one)", k(ToggleRepeat)),
         ("Cycle visualizer", k(CycleVisualizer)),
-        ("Toggle cover art", k(ToggleAscii)),
+        ("Show / hide cover art", k(ToggleAscii)),
+        ("Cycle theme", k(CycleTheme)),
         ("Like current track", k(ToggleLike)),
         ("Start radio from track", k(StartRadio)),
         ("Add to queue", k(Enqueue)),
