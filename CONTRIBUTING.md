@@ -161,7 +161,24 @@ bright enough to see, so a theme that inverts the interface will not merge.
 
 ## Working on the docs site
 
-`docs/` is plain HTML and CSS with no build step — open `docs/index.html` in a
-browser. The `pages` workflow checks that every page is well-formed and that
-no in-page link points at a missing anchor before it publishes, so a broken
-`href="#..."` fails CI rather than shipping.
+`docs/` is an [Astro Starlight](https://starlight.astro.build) site. Pages are
+Markdown under `docs/src/content/docs/`; the sidebar is declared in
+`docs/astro.config.mjs`, so a new page needs an entry there to appear.
+
+```sh
+cd docs
+npm install
+npm run dev      # http://localhost:4321/ytkew/
+npm run build    # what CI does
+```
+
+The `pages` workflow runs `npm ci`, `npm audit --audit-level=high`, the build,
+and then a link check over the generated HTML:
+
+```sh
+python3 .github/scripts/check_links.py docs/dist --base /ytkew
+```
+
+A link to a page that was renamed, or an anchor that no longer exists, fails
+the build rather than shipping. The site is served under `/ytkew/`, so
+absolute internal links need that prefix — the checker enforces it.

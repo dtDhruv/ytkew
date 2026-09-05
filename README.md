@@ -19,7 +19,7 @@ playing from your own YouTube Music account.
 [Documentation](https://dtdhruv.github.io/ytkew/) ·
 [Install](#install) ·
 [Keys](#keys) ·
-[Configuration](https://dtdhruv.github.io/ytkew/#configuration) ·
+[Configuration](https://dtdhruv.github.io/ytkew/reference/configuration/) ·
 [Contributing](CONTRIBUTING.md)
 
 [![ci](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml)
@@ -151,7 +151,7 @@ Set `keys = "vim"` for `gg`, `G`, `ctrl+d`/`ctrl+u`, `x`, `dd`, `J`/`K` and
 `H`/`L`. The hint line at the bottom is generated from whichever preset is
 active, so what it shows is always the truth.
 
-**[Full keybinding reference →](https://dtdhruv.github.io/ytkew/#keys)**
+**[Full keybinding reference →](https://dtdhruv.github.io/ytkew/guide/keys/)**
 
 ## Configuration
 
@@ -167,13 +167,13 @@ library_layout = "columns"    # columns | tree
 cover_mode = "auto"           # auto | kitty | sixel | blocks | off
 ```
 
-**[Full configuration reference →](https://dtdhruv.github.io/ytkew/#configuration)**
+**[Full configuration reference →](https://dtdhruv.github.io/ytkew/reference/configuration/)**
 
 ## Documentation
 
 **[dtdhruv.github.io/ytkew](https://dtdhruv.github.io/ytkew/)** — install,
-signing in, every key, themes, the album-art story, the full config table,
-and troubleshooting.
+signing in, every key, themes, the album-art story, the full configuration
+table and troubleshooting, with search.
 
 ## Contributing
 

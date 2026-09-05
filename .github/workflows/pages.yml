@@ -1,14 +1,10 @@
 name: pages
 
-# Publishes docs/ to GitHub Pages. The site is plain HTML and CSS with no
-# build step, so this only validates and uploads the directory.
+# Builds the Astro Starlight site in docs/ and publishes it to GitHub Pages.
 #
-# ONE-TIME SETUP: repository Settings -> Pages -> Source -> "GitHub Actions".
-# Until that is done every run fails at configure-pages with a 404, because
-# the repository has no Pages site to configure. The action can create one
-# itself via its `enablement` input, but that needs a personal access token
-# with admin scope rather than the built-in GITHUB_TOKEN, which is more
-# trouble than the setting is.
+# Pages must be set to build from GitHub Actions: Settings -> Pages -> Source
+# -> "GitHub Actions". Without it configure-pages fails with a bare 404, so
+# the preflight below says so in words.
 
 on:
   push:
@@ -16,8 +12,8 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"
-  # So the site can be published without an unrelated commit -- which is how
-  # you publish it the first time, right after enabling Pages.
+      - ".github/scripts/check_links.py"
+  # So the site can be republished without an unrelated commit.
   workflow_dispatch:
 
 permissions:
@@ -31,6 +27,10 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+defaults:
+  run:
+    working-directory: docs
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -40,8 +40,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check the pages are well-formed
-        run: python3 .github/scripts/check_docs.py
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      # `ci` rather than `install`: the lockfile decides, so a build here
+      # matches the build that was tested.
+      - run: npm ci
+
+      - name: Check for known vulnerabilities
+        # The site is static, but its build tooling still runs on a runner
+        # with a token. Advisories in it are worth knowing about.
+        run: npm audit --audit-level=high
+
+      - run: npm run build
+
+      - name: Check every internal link resolves
+        working-directory: .
+        run: python3 .github/scripts/check_links.py docs/dist --base /ytkew
 
       - name: Check Pages is enabled
         # configure-pages reports a bare "Not Found" for this, which reads
@@ -51,13 +69,13 @@ jobs:
         run: |
           if ! gh api "repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1; then
             echo "::error::GitHub Pages is not enabled for this repository."
-            echo "::error::Settings -> Pages -> Source -> \"GitHub Actions\", then re-run this workflow."
+            echo "::error::Settings -> Pages -> Source -> \"GitHub Actions\", then re-run."
             exit 1
           fi
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs
+          path: docs/dist
       - id: deploy
         uses: actions/deploy-pages@v5

@@ -1,0 +1,103 @@
+---
+title: ytkew
+description: A terminal YouTube Music player, in the spirit of kew.
+template: splash
+head:
+  - tag: title
+    content: ytkew — a terminal YouTube Music player
+hero:
+  tagline: |
+    A terminal YouTube Music player, in the spirit of kew — cover art, a
+    spectrum visualizer, album-derived colours, no distractions — playing
+    from your own YouTube Music account.
+  image:
+    html: |
+      <pre class="banner-art">
+      <span class="r1">██╗   ██╗████████╗██╗  ██╗███████╗██╗    ██╗</span>
+      <span class="r2">╚██╗ ██╔╝╚══██╔══╝██║ ██╔╝██╔════╝██║    ██║</span>
+      <span class="r3"> ╚████╔╝    ██║   █████╔╝ █████╗  ██║ █╗ ██║</span>
+      <span class="r4">  ╚██╔╝     ██║   ██╔═██╗ ██╔══╝  ██║███╗██║</span>
+      <span class="r5">   ██║      ██║   ██║  ██╗███████╗╚███╔███╔╝</span>
+      <span class="r6">   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝ </span>
+      </pre>
+  actions:
+    - text: Install
+      link: /ytkew/start/install/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/dtDhruv/ytkew
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+<div class="terminal">
+  <div class="terminal-bar"><i /><i /><i /><span>ytkew radiohead creep</span></div>
+<pre> ytkew   1 queue    2 library    3 track    4 search               not signed in  1/20  vol ▪▪▪▫▫ 60%
+──────────────────────────────┘           └───────────────────────────────────────────────────────────
+╭| now playing |─────────────────────────╮ ╭| up next |──────────────────────────────────────────────╮
+│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Creep (Acoustic)               4:19↑│
+│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Karma Police                   4:22█│
+│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Let Down                       5:00█│
+│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          No Surprises                   3:49█│
+│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Kelly Clarkson     Creep (Live)                   4:09█│
+│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Fake Plastic Trees             4:51█│
+│                                        │ │  Radiohead          Everything In Its Right Place  4:12█│
+│ Creep                                  │ │  Scala &amp; Kolacny B… Creep                          4:54█│
+│ Radiohead                              │ │  Radiohead          Jigsaw Falling Into Place      4:09║│
+│ Creep                                  │ │  Scott Bradlee&#x27;s P… Creep (feat. Haley Reinhart)   4:44║│
+│                                        │ │  Radiohead          Exit Music (For A Film)        4:28║│
+│                                        │ │  Radiohead          Street Spirit (Fade Out)       4:14║│
+│    ▄▅▅▇▇▁                              │ │  Radiohead          Airbag                         4:48║│
+│ ▆▆▆██████▇▇                            │ │  Radiohead          You And Whose Army?            3:11║│
+│ ███████████▇▅                          │ │  Radiohead          All I Need                     3:49║│
+│ ██████████████▅▃▄▃▃▁▂▅▁▃▆▅▁▂▁▂▁▂▁▂▂▁▂▂ │ │  Radiohead          No Surprises                   3:50║│
+│ 0:13 ━━●━━━━━━━━━━━━━━━━━━━━━━━━━ 3:58 │ │  Stone Temple Pilo… Creep                          5:33↓│
+╰────────────────────────────────| 1/20 |╯ ╰─────────────────────────────────────────────────────────╯
+ space play · h/l skip · a/d seek · +/- vol · s shuffle · r repeat · m lyrics · esc menu   F6 help</pre>
+</div>
+
+## Why
+
+Every YouTube Music client is either a browser tab or an Electron app. ytkew
+is neither: it is a terminal program that hands playback to **mpv**, so a slow
+redraw can never stutter the audio, and it looks and behaves like
+[kew](https://github.com/ravachol/kew), which got the interface right.
+
+<CardGrid>
+  <Card title="Full-resolution cover art" icon="star">
+    Kitty graphics where the terminal supports it, sixel where it does not,
+    truecolor half-blocks everywhere else.
+  </Card>
+  <Card title="Gapless playback" icon="right-arrow">
+    The next track is resolved and buffered while the current one plays, so
+    transitions never stall on a yt-dlp round trip.
+  </Card>
+  <Card title="Spectrum visualizer" icon="bars">
+    A real FFT over the PipeWire sink monitor, the way cava does it.
+  </Card>
+  <Card title="Colours from the artwork" icon="sun">
+    The palette is sampled from the album cover — or pick one of ten themes,
+    or write your own.
+  </Card>
+  <Card title="vim keys" icon="setting">
+    An optional preset with `gg`, `G`, `ctrl+d`, `dd` and the rest.
+  </Card>
+  <Card title="MPRIS" icon="laptop">
+    Media keys work, and it appears in the GNOME or KDE now-playing panel
+    with artwork and a seek bar.
+  </Card>
+</CardGrid>
+
+## Get going
+
+```sh
+git clone https://github.com/dtDhruv/ytkew
+cd ytkew
+make install
+ytkew radiohead creep
+```
+
+Needs `mpv` and `yt-dlp` on `PATH`. Search, radio and lyrics work signed out;
+only your own library needs [credentials](/ytkew/start/signing-in/).

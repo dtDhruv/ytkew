@@ -15,3 +15,14 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+
+  # The docs site's build tooling. Grouped, because Astro and Starlight
+  # release often and each bump on its own would be noise.
+  - package-ecosystem: npm
+    directory: "/docs"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      docs:
+        patterns: ["*"]

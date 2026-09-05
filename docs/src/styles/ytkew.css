@@ -1,0 +1,125 @@
+/* ytkew's colours over Starlight's defaults.
+   The red is btop's #E62525, which is what the program draws its own banner
+   in, so the site and the running application agree. */
+
+:root {
+  --sl-color-accent-low: #3a0f0f;
+  --sl-color-accent: #c01f1f;
+  --sl-color-accent-high: #ff9b9b;
+
+  --sl-color-white: #fff;
+  --sl-color-gray-1: #eee5e7;
+  --sl-color-gray-2: #c6b9bc;
+  --sl-color-gray-3: #9b8a8f;
+  --sl-color-gray-4: #665458;
+  --sl-color-gray-5: #43363a;
+  --sl-color-gray-6: #2b2124;
+  --sl-color-black: #171114;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #ffd9d9;
+  --sl-color-accent: #c01f1f;
+  --sl-color-accent-high: #5c0f0f;
+
+  --sl-color-white: #171114;
+  --sl-color-gray-1: #2b2124;
+  --sl-color-gray-2: #43363a;
+  --sl-color-gray-3: #746166;
+  --sl-color-gray-4: #a08e93;
+  --sl-color-gray-5: #ded3d5;
+  --sl-color-gray-6: #f2eced;
+  --sl-color-gray-7: #f9f5f6;
+  --sl-color-black: #fff;
+}
+
+/* The banner and the terminal captures are fixed-width art: they must not
+   wrap, and they have to stay legible when the viewport is narrower than
+   they are. Scrolling the block beats reflowing it into nonsense. */
+.terminal pre,
+.banner-art {
+  line-height: 1.25;
+  white-space: pre;
+  overflow-x: auto;
+}
+.terminal pre { font-size: 0.72rem; }
+
+@media (max-width: 50rem) {
+  .terminal pre { font-size: 0.56rem; }
+}
+
+/* The ANSI Shadow wordmark, in btop's ramp -- the six rows the program draws
+   in its own menu. It scales with the viewport so it fills the hero without
+   ever wrapping, which would turn the letterforms into noise. */
+.banner-art {
+  font-family: var(--__sl-font-mono);
+  font-weight: 700;
+  font-size: clamp(0.42rem, 1.7vw, 1.05rem);
+  margin: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.banner-art .r1 { color: #e62525; }
+.banner-art .r2 { color: #cd2121; }
+.banner-art .r3 { color: #b31d1d; }
+.banner-art .r4 { color: #9a1919; }
+.banner-art .r5 { color: #801414; }
+.banner-art .r6 { color: #4a0c0c; }
+
+/* The wordmark is the title on the splash page, so the heading beside it is
+   redundant to look at -- but it still belongs in the document for screen
+   readers and for search engines. */
+.hero .copy h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Terminal captures get a window frame so they read as screenshots rather
+   than as code you are meant to copy. */
+.terminal {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  margin-block: 1.5rem;
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--sl-color-gray-6);
+  border-bottom: 1px solid var(--sl-color-gray-5);
+}
+.terminal-bar i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--sl-color-gray-4);
+}
+.terminal-bar i:first-child { background: #c01f1f; }
+.terminal-bar span {
+  margin-left: 0.4rem;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.75rem;
+  color: var(--sl-color-gray-3);
+}
+.terminal pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.75rem;
+  color: var(--sl-color-gray-2);
+}
+
+/* Key tables read better with the keys held to their own column. */
+.sl-markdown-content table td:first-child {
+  white-space: nowrap;
+}

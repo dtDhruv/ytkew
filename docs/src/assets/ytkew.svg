@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>ytkew</title>
+
+  <!-- Solid fills throughout, no gradients: several icon renderers drop a
+       gradient inherited through a group and leave a blank square. The red is
+       btop's, which is also what ytkew's own banner uses. -->
+  <rect width="128" height="128" rx="28" fill="#181113"/>
+
+  <!-- A blocky Y carrying the same hard offset shadow as the ANSI Shadow
+       banner the app draws in its menu, so the icon and the running program
+       look like the same thing. -->
+  <g fill="none" stroke-linecap="butt" stroke-width="16">
+    <g stroke="#6d1010" transform="translate(6,6)">
+      <path d="M34 25 L64 61"/>
+      <path d="M94 25 L64 61"/>
+      <path d="M64 59 L64 87"/>
+    </g>
+    <g stroke="#e62525">
+      <path d="M34 25 L64 61"/>
+      <path d="M94 25 L64 61"/>
+      <path d="M64 59 L64 87"/>
+    </g>
+  </g>
+
+  <!-- The spectrum, so the mark says "player" and not just "Y". Four bars
+       rather than five: at 16px a fifth turns the row into a smear. -->
+  <g fill="#c92121">
+    <rect x="33" y="103" width="11" height="11" rx="2.5"/>
+    <rect x="50" y="97"  width="11" height="17" rx="2.5"/>
+    <rect x="67" y="100" width="11" height="14" rx="2.5"/>
+    <rect x="84" y="106" width="11" height="8"  rx="2.5"/>
+  </g>
+</svg>
