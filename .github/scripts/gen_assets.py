@@ -18,12 +18,58 @@ Run it after touching the icon or `src/ui/banner.rs`:
 CI runs it too and fails if the tree changes, so a stale copy cannot ship.
 """
 import pathlib
+import re
 import shutil
+import sys
 
-S = "/tmp/claude-1001/-home-dhruv-codes/95205970-2abd-4d47-96e4-f047cdb41886/scratchpad/"
-rows = pathlib.Path(S + "banner.txt").read_text().rstrip("\n").split("\n")
+# Every path below is relative to the repository, not to wherever this was
+# invoked from -- the previous version of this script assumed a directory and
+# only ever worked on one machine.
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+BANNER_RS = ROOT / "src/ui/banner.rs"
+
+
+def banner_rows() -> list[str]:
+    """Read the wordmark out of the Rust source that draws it.
+
+    Parsing the letter tables is uglier than keeping a copy of the finished
+    art next to this script, and it is the reason the two cannot disagree:
+    the terminal and the website are then rendering the same characters, and
+    editing `banner.rs` is enough to move both.
+    """
+    src = BANNER_RS.read_text()
+
+    # const Y: [&str; ROWS] = [ "...", "...", ];
+    letters = {
+        m.group(1): re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(2))
+        for m in re.finditer(
+            r"const (\w+): \[&str; ROWS\] = \[(.*?)\];", src, re.S
+        )
+    }
+    # const LETTERS: [&[&str; ROWS]; N] = [&Y, &T, ...];
+    order = re.search(r"const LETTERS:[^=]*= \[(.*?)\];", src, re.S)
+    if not order:
+        sys.exit(f"{BANNER_RS}: could not find the LETTERS table")
+    names = re.findall(r"&(\w+)", order.group(1))
+
+    missing = [n for n in names if n not in letters]
+    if missing:
+        sys.exit(f"{BANNER_RS}: LETTERS names {missing} have no letter table")
+
+    heights = {len(letters[n]) for n in names}
+    if len(heights) != 1:
+        sys.exit(f"{BANNER_RS}: letters disagree on height: {heights}")
+
+    height = heights.pop()
+    return ["".join(letters[n][i] for n in names) for i in range(height)]
+
+
+rows = banner_rows()
 COLS = max(len(r) for r in rows)
 rows = [r.ljust(COLS) for r in rows]
+if len(rows) < 2 or COLS < 10:
+    sys.exit(f"parsed a suspiciously small banner: {len(rows)}x{COLS}")
 
 CW, CH = 12.0, 22.0          # cell size; roughly a terminal's aspect
 T = 3.2                      # stroke weight for the box-drawing shadow
@@ -81,18 +127,18 @@ parts.append("</svg>")
 # if their monospace font cooperates -- vector shapes are red, centred and
 # identical everywhere.
 svg = "\n".join(parts) + "\n"
-for out in (pathlib.Path("assets/wordmark.svg"), pathlib.Path("docs/src/assets/wordmark.svg")):
+for out in (ROOT / "assets/wordmark.svg", ROOT / "docs/src/assets/wordmark.svg"):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(svg)
-    print(f"wrote {out} ({W:.0f}x{H:.0f})")
+    print(f"wrote {out.relative_to(ROOT)} ({W:.0f}x{H:.0f})")
 
 # The icon is drawn by hand; these are copies of it. assets/ytkew.svg is the
 # one to edit -- the binary embeds that path, and the Makefile installs it.
-ICON = pathlib.Path("assets/ytkew.svg")
+ICON = ROOT / "assets/ytkew.svg"
 for out in (
-    pathlib.Path("docs/src/assets/ytkew.svg"),   # Astro's image pipeline
-    pathlib.Path("docs/public/ytkew.svg"),       # the favicon
+    ROOT / "docs/src/assets/ytkew.svg",   # Astro's image pipeline
+    ROOT / "docs/public/ytkew.svg",       # the favicon
 ):
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ICON, out)
-    print(f"copied {ICON} -> {out}")
+    print(f"copied {ICON.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
