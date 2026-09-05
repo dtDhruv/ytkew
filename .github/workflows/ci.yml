@@ -30,3 +30,16 @@ jobs:
       # build without it has to stay clean too -- otherwise it rots unnoticed.
       - run: cargo clippy --no-default-features --all-targets -- -D warnings
       - run: cargo test
+
+      - name: Check the derived assets are current
+        # The icon lives in assets/ and is copied into the site; the wordmark
+        # is generated from the banner. Both are easy to change in one place
+        # and forget in the others.
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python3 .github/scripts/gen_assets.py
+          if ! git diff --quiet; then
+            echo "::error::Derived assets are stale. Run: python3 .github/scripts/gen_assets.py"
+            git diff --stat
+            exit 1
+          fi

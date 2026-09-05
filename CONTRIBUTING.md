@@ -239,16 +239,31 @@ A link to a page that was renamed, or an anchor that no longer exists, fails
 the build rather than shipping. The site is served under `/ytkew/`, so
 absolute internal links need that prefix — the checker enforces it.
 
-### The wordmark
+## Changing the logo or the wordmark
 
-`docs/src/assets/wordmark.svg` is generated, not hand-drawn:
+`assets/ytkew.svg` is the **only** icon anyone should edit. The binary embeds
+that exact path, the Makefile installs it, and the website's two copies are
+generated from it. The wordmark is generated too, from the same ANSI Shadow
+grid `src/ui/banner.rs` draws.
+
+After changing either, run:
 
 ```sh
-python3 .github/scripts/gen_wordmark.py
+python3 .github/scripts/gen_assets.py
 ```
 
-It reads the same ANSI Shadow grid the program draws in its menu and emits
-each cell as a vector shape. Pasting the block characters into a `<pre>`
-instead only works if the reader's monospace font tiles `█` and `╗╝║═`
-exactly — browsers make no such promise, and the letterforms come apart. If
-you change the banner in `src/ui/banner.rs`, re-run the generator.
+CI runs it as well and fails if the tree changes, so a stale copy cannot
+ship.
+
+Two things to keep stable while you are in there:
+
+- **The file name.** `Icon=ytkew` in `ytkew.desktop` resolves by name, and
+  users already have `ytkew.svg` in their icon theme. Changing the contents
+  is free; renaming the file orphans every installed copy.
+- **Solid fills, no gradients.** Several icon renderers drop a gradient
+  inherited through a group and leave a blank square — this icon was rebuilt
+  once for exactly that reason.
+
+Existing installs keep the old icon until the user re-runs `make install` or
+`ytkew --install-desktop-entry`, so a logo change is worth a line in the
+release notes.

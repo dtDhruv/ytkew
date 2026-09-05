@@ -1,11 +1,24 @@
-"""Turn the ANSI Shadow banner into an SVG.
+"""Regenerate every derived asset from its single source.
 
-The terminal draws it with block and box-drawing characters, which only line
-up if the renderer's font tiles them exactly -- browsers do not guarantee
-that, and the letterforms come apart. Emitting the same grid as vector shapes
-gives identical output everywhere.
+Two jobs:
+
+* The wordmark. The terminal draws it with block and box-drawing characters,
+  which only line up if the renderer's font tiles them exactly -- browsers do
+  not guarantee that, and the letterforms come apart. Emitting the same grid
+  as vector shapes gives identical output everywhere.
+* The icon. `assets/ytkew.svg` is the only copy anyone should edit; the
+  website needs its own under `src/` for Astro's pipeline and another in
+  `public/` for the favicon. Copying them here means changing the logo is one
+  file, not three that quietly drift.
+
+Run it after touching the icon or `src/ui/banner.rs`:
+
+    python3 .github/scripts/gen_assets.py
+
+CI runs it too and fails if the tree changes, so a stale copy cannot ship.
 """
 import pathlib
+import shutil
 
 S = "/tmp/claude-1001/-home-dhruv-codes/95205970-2abd-4d47-96e4-f047cdb41886/scratchpad/"
 rows = pathlib.Path(S + "banner.txt").read_text().rstrip("\n").split("\n")
@@ -72,3 +85,14 @@ for out in (pathlib.Path("assets/wordmark.svg"), pathlib.Path("docs/src/assets/w
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(svg)
     print(f"wrote {out} ({W:.0f}x{H:.0f})")
+
+# The icon is drawn by hand; these are copies of it. assets/ytkew.svg is the
+# one to edit -- the binary embeds that path, and the Makefile installs it.
+ICON = pathlib.Path("assets/ytkew.svg")
+for out in (
+    pathlib.Path("docs/src/assets/ytkew.svg"),   # Astro's image pipeline
+    pathlib.Path("docs/public/ytkew.svg"),       # the favicon
+):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ICON, out)
+    print(f"copied {ICON} -> {out}")
