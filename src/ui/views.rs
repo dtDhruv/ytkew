@@ -296,8 +296,12 @@ fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
     } else {
         0
     };
-    let h = ((banner_h + words.len() * 3 + words.len() - 1 + 2) as u16).min(area.height);
-    let w = (grid_w as u16 + 6).min(area.width);
+    // Border, plus a blank row inside it top and bottom, plus side padding --
+    // the art needs room around it or the frame crowds the logo.
+    const PAD_V: usize = 2;
+    const PAD_H: u16 = 8;
+    let h = ((banner_h + words.len() * 3 + words.len() - 1 + 2 + PAD_V) as u16).min(area.height);
+    let w = (grid_w as u16 + PAD_H + 2).min(area.width);
     let popup = Rect::new(
         area.x + (area.width.saturating_sub(w)) / 2,
         area.y + (area.height.saturating_sub(h)) / 2,
@@ -306,6 +310,13 @@ fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
     );
     Clear.render(popup, f.buffer_mut());
     let inner = panel(f, popup, "menu", None, app);
+    // Inset the content by the padding rows, keeping it centred.
+    let inner = Rect::new(
+        inner.x,
+        inner.y + 1,
+        inner.width,
+        inner.height.saturating_sub(2),
+    );
 
     let mut lines: Vec<Line> = if show_banner {
         let mut b = banner_lines(app, grid_w);
@@ -339,9 +350,9 @@ fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
 }
 
 /// The wordmark banner, centred and shaded down the ramp.
-fn banner_lines(app: &App, width: usize) -> Vec<Line<'static>> {
+fn banner_lines(_app: &App, width: usize) -> Vec<Line<'static>> {
     use crate::ui::banner;
-    let shades = banner::shades(&app.palette);
+    let shades = banner::shades();
     banner::rows()
         .into_iter()
         .enumerate()

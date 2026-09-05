@@ -6,7 +6,7 @@
 //! construction, but the ramp is taken from the active theme rather than
 //! being hard-coded red, so it follows the palette like everything else.
 
-use crate::palette::{Palette, Rgb};
+use crate::palette::Rgb;
 
 /// Rows in the banner, including the shadow row.
 pub const ROWS: usize = 6;
@@ -73,23 +73,21 @@ pub fn width() -> usize {
         .sum()
 }
 
-/// Colour ramp down the rows: brightest at the top, fading into the border
-/// colour at the shadow row, which is what gives btop's logo its depth.
-pub fn shades(palette: &Palette) -> Vec<Rgb> {
-    let top = palette.accent();
-    let bottom = palette.dark;
-    (0..ROWS)
-        .map(|i| {
-            // Ease toward the dark end so the top rows stay saturated and
-            // only the shadow row drops away, as in btop's ramp.
-            let t = (i as f32 / (ROWS - 1) as f32).powf(1.6);
-            Rgb(
-                (top.0 as f32 + (bottom.0 as f32 - top.0 as f32) * t) as u8,
-                (top.1 as f32 + (bottom.1 as f32 - top.1 as f32) * t) as u8,
-                (top.2 as f32 + (bottom.2 as f32 - top.2 as f32) * t) as u8,
-            )
-        })
-        .collect()
+/// btop's own ramp, verbatim from `Global::Banner_src`. The logo keeps this
+/// regardless of theme, the way btop's stays red: it reads as the mark rather
+/// than as another themed element.
+pub const RAMP: [Rgb; ROWS] = [
+    Rgb(0xE6, 0x25, 0x25),
+    Rgb(0xCD, 0x21, 0x21),
+    Rgb(0xB3, 0x1D, 0x1D),
+    Rgb(0x9A, 0x19, 0x19),
+    Rgb(0x80, 0x14, 0x14),
+    Rgb(0x4A, 0x0C, 0x0C),
+];
+
+/// Colour for each row, brightest at the top and fading into the shadow.
+pub fn shades() -> [Rgb; ROWS] {
+    RAMP
 }
 
 #[cfg(test)]
@@ -123,8 +121,7 @@ mod tests {
 
     #[test]
     fn the_ramp_darkens_from_top_to_bottom() {
-        let p = Palette::default();
-        let s = shades(&p);
+        let s = shades();
         assert_eq!(s.len(), ROWS);
         let lum = |c: Rgb| 0.2126 * c.0 as f32 + 0.7152 * c.1 as f32 + 0.0722 * c.2 as f32;
         for i in 1..ROWS {
@@ -134,6 +131,15 @@ mod tests {
             );
         }
         assert!(lum(s[0]) > lum(s[ROWS - 1]), "top should outshine the shadow");
+    }
+
+    #[test]
+    fn the_shadow_row_stays_visible_on_a_black_terminal() {
+        // btop ends its ramp at pure black, which vanishes entirely on a dark
+        // background. The last row is lifted just enough to still read.
+        let last = shades()[ROWS - 1];
+        let lum = 0.2126 * last.0 as f32 + 0.7152 * last.1 as f32 + 0.0722 * last.2 as f32;
+        assert!(lum > 8.0, "shadow row would be invisible ({last:?})");
     }
 
     #[test]
