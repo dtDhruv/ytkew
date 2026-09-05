@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Advisories are published against code that has not changed, so the useful
+  # Advisories get published against code that has not changed, so the useful
   # signal comes from re-running on a schedule rather than only on commits.
   schedule:
     - cron: "17 6 * * 1"
@@ -21,7 +21,7 @@ jobs:
     name: advisories
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -34,7 +34,7 @@ jobs:
     name: licences and bans
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -43,16 +43,15 @@ jobs:
       - run: cargo deny check
 
   secrets:
-    name: secret scan
+    name: credential hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          # gitleaks needs history to scan commits, not just the tree.
+          # Scan the history, not just the tip: a credential removed in a
+          # later commit is still published.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 .github/scripts/check_secrets.py
 
   dependency-review:
     name: dependency review
@@ -60,8 +59,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: moderate
           deny-licenses: AGPL-3.0, SSPL-1.0, BUSL-1.1

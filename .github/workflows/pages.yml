@@ -1,10 +1,14 @@
 name: pages
 
 # Publishes docs/ to GitHub Pages. The site is plain HTML and CSS with no
-# build step, so this only uploads the directory.
+# build step, so this only validates and uploads the directory.
 #
-# One-time setup: repository Settings -> Pages -> Source -> "GitHub Actions".
-# Without that the deploy step fails with a 404.
+# ONE-TIME SETUP: repository Settings -> Pages -> Source -> "GitHub Actions".
+# Until that is done every run fails at configure-pages with a 404, because
+# the repository has no Pages site to configure. The action can create one
+# itself via its `enablement` input, but that needs a personal access token
+# with admin scope rather than the built-in GITHUB_TOKEN, which is more
+# trouble than the setting is.
 
 on:
   push:
@@ -12,7 +16,8 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"
-  # So the site can be republished without an unrelated commit.
+  # So the site can be published without an unrelated commit -- which is how
+  # you publish it the first time, right after enabling Pages.
   workflow_dispatch:
 
 permissions:
@@ -33,67 +38,26 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the pages are well-formed
+        run: python3 .github/scripts/check_docs.py
+
+      - name: Check Pages is enabled
+        # configure-pages reports a bare "Not Found" for this, which reads
+        # like a broken workflow rather than a setting nobody has flipped.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 - <<'EOF'
-          import html.parser, pathlib, sys
+          if ! gh api "repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1; then
+            echo "::error::GitHub Pages is not enabled for this repository."
+            echo "::error::Settings -> Pages -> Source -> \"GitHub Actions\", then re-run this workflow."
+            exit 1
+          fi
 
-          VOID = {"meta", "link", "img", "br", "hr", "input", "source", "area"}
-
-          class Check(html.parser.HTMLParser):
-              def __init__(self):
-                  super().__init__()
-                  self.stack, self.problems = [], []
-              def handle_starttag(self, tag, attrs):
-                  if tag not in VOID:
-                      self.stack.append(tag)
-              def handle_endtag(self, tag):
-                  if tag in VOID:
-                      return
-                  if self.stack and self.stack[-1] == tag:
-                      self.stack.pop()
-                  else:
-                      self.problems.append(f"</{tag}> does not close <{self.stack[-1] if self.stack else 'nothing'}>")
-
-          failed = False
-          for page in sorted(pathlib.Path("docs").rglob("*.html")):
-              c = Check()
-              c.feed(page.read_text())
-              for p in c.problems:
-                  print(f"{page}: {p}")
-                  failed = True
-              if c.stack:
-                  print(f"{page}: unclosed at end of file: {c.stack}")
-                  failed = True
-          sys.exit(1 if failed else 0)
-          EOF
-
-      - name: Check for dead in-page links
-        run: |
-          python3 - <<'EOF'
-          import pathlib, re, sys
-
-          failed = False
-          for page in sorted(pathlib.Path("docs").rglob("*.html")):
-              text = page.read_text()
-              ids = set(re.findall(r'id="([^"]+)"', text))
-              for target in re.findall(r'href="#([^"]+)"', text):
-                  if target not in ids:
-                      print(f"{page}: #{target} has no matching id")
-                      failed = True
-              # Local assets referenced by the page must actually be there.
-              for ref in re.findall(r'(?:href|src)="(?!https?:|#|mailto:)([^"]+)"', text):
-                  if not (page.parent / ref).exists():
-                      print(f"{page}: missing local file {ref}")
-                      failed = True
-          sys.exit(1 if failed else 0)
-          EOF
-
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

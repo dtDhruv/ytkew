@@ -12,11 +12,14 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      # browser-cookies is on by default and gates a whole module, so the
+      # build without it has to stay clean too -- otherwise it rots unnoticed.
+      - run: cargo clippy --no-default-features --all-targets -- -D warnings
       - run: cargo test
