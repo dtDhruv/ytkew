@@ -10,6 +10,16 @@ repository = "https://github.com/dtDhruv/ytkew"
 readme = "README.md"
 keywords = ["music", "youtube", "tui", "terminal", "player"]
 categories = ["command-line-utilities", "multimedia::audio"]
+# Nobody running `cargo install ytkew` needs the website's Astro sources or
+# the CI workflows, and shipping them only makes the crate bigger to fetch.
+# The desktop entry, icon and Makefile stay: they are how you get the launcher
+# entry that `cargo install` cannot set up on its own.
+exclude = [
+    "docs/",
+    ".github/",
+    "deny.toml",
+    ".gitignore",
+]
 license = "GPL-3.0-or-later"
 
 [features]
