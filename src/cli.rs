@@ -149,7 +149,24 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
     // perfectly and never makes a sound.
     let cfg = crate::config::Config::load(cfg_dir);
     match crate::player::find_extractor(&cfg.ytdlp_path) {
-        Ok(path) => println!("  yt-dlp       {}", path.display()),
+        Ok(path) => {
+            // The age matters as much as the path: a stale extractor is the
+            // usual reason tracks stop resolving.
+            let version = crate::player::extractor_version(&path);
+            let age = version
+                .as_deref()
+                .and_then(|v| crate::player::version_age_days(v, crate::player::today_days()));
+            let note = match (version.as_deref(), age) {
+                (Some(v), Some(d)) if d > crate::player::STALE_AFTER_DAYS => {
+                    format!("{v} -- {d} days old, UPDATE IT (`yt-dlp -U`)")
+                }
+                (Some(v), Some(d)) => format!("{v} ({d} days old)"),
+                (Some(v), None) => v.to_string(),
+                _ => "version unknown".to_string(),
+            };
+            println!("  yt-dlp       {}", path.display());
+            println!("               {note}");
+        }
         Err(_) => println!("  yt-dlp       MISSING -- nothing will play"),
     }
     match std::process::Command::new("mpv")

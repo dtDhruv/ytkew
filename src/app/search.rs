@@ -249,6 +249,22 @@ impl App {
         });
     }
 
+    /// Work out why tracks keep failing, and say so.
+    ///
+    /// Runs off-thread: asking yt-dlp its version means starting it, and the
+    /// standalone build takes the better part of a second to do that.
+    pub(crate) fn check_extractor_freshness(&mut self) {
+        let path = self.player.extractor_path().to_path_buf();
+        let tx = self.tx.clone();
+        self.notify("tracks failing — checking yt-dlp…");
+        tokio::task::spawn_blocking(move || {
+            let version = crate::player::extractor_version(&path);
+            let advice =
+                crate::player::staleness_advice(version.as_deref(), crate::player::today_days());
+            let _ = tx.send(AppMsg::Error(advice));
+        });
+    }
+
     /// Extend the queue with YouTube's radio mix for a track, which is how a
     /// one-song search turns into a listening session.
     pub fn append_radio(&mut self, video_id: &str) {

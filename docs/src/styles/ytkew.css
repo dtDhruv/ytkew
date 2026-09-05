@@ -47,22 +47,28 @@
   .terminal pre { font-size: 0.62rem; }
 }
 
-/* The wordmark.
-   ytkew draws its own banner in the ANSI Shadow figlet font -- solid blocks
-   with a hard bottom-right shadow. Reproducing that literally on the web
-   means pasting the block characters into a <pre>, and that only holds if
-   the visitor's monospace font tiles them exactly: it usually does not, and
-   the letterforms break apart. A real typeface with an offset shadow gives
-   the same silhouette and cannot come apart. */
+/* The wordmark is ytkew's own ANSI Shadow banner, emitted as vector shapes by
+   .github/scripts/gen_wordmark.py. Pasting the block characters into a <pre>
+   instead only holds if the visitor's monospace font tiles them exactly --
+   it usually does not, and the letterforms come apart.
+
+   It is the page's title, so the heading beside it is redundant to look at,
+   but still belongs in the document for screen readers and search engines. */
 .hero .copy h1 {
-  font-family: var(--__sl-font-mono);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: #e62525;
-  text-shadow: 0.055em 0.055em 0 #6d1010;
-  font-size: clamp(3rem, 9vw, 5.5rem);
-  line-height: 1;
-  margin-block-end: 0.2em;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.hero img[src*="wordmark"] {
+  width: 100%;
+  max-width: 34rem;
+  height: auto;
 }
 
 /* Terminal captures get a window frame so they read as screenshots rather

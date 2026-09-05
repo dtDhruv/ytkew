@@ -80,6 +80,9 @@ pub struct Player {
     req_id: AtomicI64,
     socket: PathBuf,
     child: Arc<RwLock<Option<Child>>>,
+    /// Where the stream extractor was found, for reporting its version when
+    /// tracks start failing.
+    extractor: PathBuf,
     /// Ceiling for the volume. Above 100 mpv applies plain digital gain with
     /// nothing to catch the peaks, so anything already near full scale clips
     /// and the track turns fuzzy. Boosting stays available for quiet
@@ -157,6 +160,87 @@ fn find_extractor_in(configured: &str, dirs: &[PathBuf]) -> Result<PathBuf> {
          ~/.config/ytkew/config.toml:\n  \
            ytdlp_path = \"/opt/bin/yt-dlp\""
     )
+}
+
+/// Ask the extractor what version it is.
+///
+/// yt-dlp names its releases after the date they were cut, so the version
+/// string doubles as an age.
+pub fn extractor_version(path: &Path) -> Option<String> {
+    let out = std::process::Command::new(path)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!v.is_empty()).then_some(v)
+}
+
+/// Days from the civil date to the Unix epoch, by Howard Hinnant's algorithm.
+/// Exact, and cheaper than taking on a date library for one comparison.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+/// How many days old a `YYYY.MM.DD` version string is, given today as days
+/// since the epoch. `None` if it is not a dated release.
+pub fn version_age_days(version: &str, today: i64) -> Option<i64> {
+    // Releases can carry a suffix, as in "2025.03.14.232715".
+    let mut parts = version.trim().split('.');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: i64 = parts.next()?.parse().ok()?;
+    let d: i64 = parts.next()?.parse().ok()?;
+    if !(2000..=2100).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some(today - days_from_civil(y, m, d))
+}
+
+/// Today, as days since the Unix epoch.
+pub fn today_days() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| (d.as_secs() / 86_400) as i64)
+        .unwrap_or(0)
+}
+
+/// Past this, a stale extractor is the likeliest explanation for streams
+/// failing to resolve. yt-dlp ships roughly monthly and YouTube breaks it
+/// more often than that.
+pub const STALE_AFTER_DAYS: i64 = 45;
+
+/// What to tell the user after tracks fail to load.
+///
+/// Distinguishes "your tool is out of date" from "these particular tracks are
+/// unavailable", which need completely different responses -- and the first
+/// is by far the more common.
+pub fn staleness_advice(version: Option<&str>, today: i64) -> String {
+    match version.and_then(|v| version_age_days(v, today).map(|a| (v, a))) {
+        Some((v, age)) if age > STALE_AFTER_DAYS => format!(
+            "tracks keep failing — yt-dlp {v} is {} old. Run `yt-dlp -U`",
+            humanise_days(age)
+        ),
+        Some((v, _)) => {
+            format!("tracks keep failing — yt-dlp {v} is current, so they may be unavailable")
+        }
+        None => "tracks keep failing — try updating yt-dlp (`yt-dlp -U`)".to_string(),
+    }
+}
+
+fn humanise_days(days: i64) -> String {
+    match days {
+        d if d >= 730 => format!("{} years", d / 365),
+        d if d >= 365 => "over a year".to_string(),
+        d if d >= 60 => format!("{} months", d / 30),
+        d => format!("{d} days"),
+    }
 }
 
 impl Player {
@@ -253,6 +337,7 @@ impl Player {
             socket,
             child: Arc::new(RwLock::new(Some(child))),
             volume_max,
+            extractor,
         };
         player.observe_properties()?;
         Ok((player, ev_rx))
@@ -321,6 +406,10 @@ impl Player {
 
     pub fn seek_absolute(&self, secs: f64) -> Result<()> {
         self.command(json!(["seek", secs, "absolute"]))
+    }
+
+    pub fn extractor_path(&self) -> &Path {
+        &self.extractor
     }
 
     pub async fn add_volume(&self, delta: f64) -> Result<f64> {
@@ -474,6 +563,69 @@ mod tests {
         std::fs::write(&p, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         p
+    }
+
+    // 2026-09-05, as days since the epoch -- fixed so the tests do not
+    // change meaning as time passes.
+    const TODAY: i64 = 20_701;
+
+    #[test]
+    fn the_reference_date_is_the_one_the_tests_assume() {
+        assert_eq!(days_from_civil(2026, 9, 5), TODAY);
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(2000, 3, 1), 11017);
+    }
+
+    #[test]
+    fn a_dated_version_yields_its_age() {
+        assert_eq!(version_age_days("2026.09.05", TODAY), Some(0));
+        assert_eq!(version_age_days("2026.08.06", TODAY), Some(30));
+        assert_eq!(version_age_days("2025.09.05", TODAY), Some(365));
+        // Releases can carry a build suffix.
+        assert_eq!(version_age_days("2026.08.06.232715", TODAY), Some(30));
+    }
+
+    #[test]
+    fn a_version_that_is_not_a_date_is_not_guessed_at() {
+        for v in [
+            "",
+            "nightly",
+            "2026.13.01",
+            "2026.09.99",
+            "1999.01.01",
+            "abc.de.fg",
+        ] {
+            assert_eq!(version_age_days(v, TODAY), None, "{v} should not parse");
+        }
+    }
+
+    #[test]
+    fn stale_and_current_get_different_advice() {
+        // The whole point: "update your tool" and "these tracks are gone"
+        // call for completely different responses.
+        let stale = staleness_advice(Some("2025.01.10"), TODAY);
+        assert!(stale.contains("yt-dlp -U"), "got {stale}");
+        assert!(stale.contains("2025.01.10"), "got {stale}");
+
+        let fresh = staleness_advice(Some("2026.09.01"), TODAY);
+        assert!(!fresh.contains("yt-dlp -U"), "got {fresh}");
+        assert!(fresh.contains("unavailable"), "got {fresh}");
+    }
+
+    #[test]
+    fn advice_survives_a_version_it_cannot_read() {
+        for v in [None, Some("nightly")] {
+            let a = staleness_advice(v, TODAY);
+            assert!(a.contains("yt-dlp"), "got {a}");
+        }
+    }
+
+    #[test]
+    fn the_age_reads_as_a_human_would_say_it() {
+        assert_eq!(humanise_days(12), "12 days");
+        assert_eq!(humanise_days(90), "3 months");
+        assert_eq!(humanise_days(400), "over a year");
+        assert_eq!(humanise_days(800), "2 years");
     }
 
     #[test]

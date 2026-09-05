@@ -97,8 +97,12 @@ cd ytkew
 make install
 ```
 
-A stale `yt-dlp` is the usual cause of tracks failing to load. If your
-distribution's is old, `pipx install yt-dlp` gets a current one.
+> [!TIP]
+> **A stale `yt-dlp` is the most common reason a working ytkew stops playing.**
+> YouTube changes how streams are signed and yt-dlp is what keeps up, so keep
+> it current with `yt-dlp -U`. After three failures in a row ytkew checks the
+> version and tells you how old it is; `ytkew --diagnose` reports it any time.
+
 [Per-platform instructions →](https://dtdhruv.github.io/ytkew/start/install/)
 
 That puts the binary in `~/.local/bin` and the desktop entry and icon under

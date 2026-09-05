@@ -182,3 +182,17 @@ python3 .github/scripts/check_links.py docs/dist --base /ytkew
 A link to a page that was renamed, or an anchor that no longer exists, fails
 the build rather than shipping. The site is served under `/ytkew/`, so
 absolute internal links need that prefix — the checker enforces it.
+
+### The wordmark
+
+`docs/src/assets/wordmark.svg` is generated, not hand-drawn:
+
+```sh
+python3 .github/scripts/gen_wordmark.py
+```
+
+It reads the same ANSI Shadow grid the program draws in its menu and emits
+each cell as a vector shape. Pasting the block characters into a `<pre>`
+instead only works if the reader's monospace font tiles `█` and `╗╝║═`
+exactly — browsers make no such promise, and the letterforms come apart. If
+you change the banner in `src/ui/banner.rs`, re-run the generator.

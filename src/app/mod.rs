@@ -48,6 +48,9 @@ pub enum QueueOrigin {
     Search,
 }
 
+/// Consecutive load failures before the extractor gets the blame.
+const FAILURES_BEFORE_BLAMING_YTDLP: u32 = 3;
+
 pub enum AppMsg {
     /// Results for one filter, tagged so a slow reply cannot land in a list
     /// the user has already switched away from.
@@ -168,6 +171,12 @@ pub struct App {
     pub library_columns_open: bool,
     /// First key of a two-key sequence, waiting on the second.
     pub pending_key: Option<char>,
+    /// Tracks that have failed to load in a row. One is bad luck -- a
+    /// deleted or region-locked video. Several in a row is the extractor.
+    load_failures: u32,
+    /// Whether the "your yt-dlp is stale" advice has already been given.
+    /// Once a session is enough; repeating it every track would be noise.
+    warned_stale: bool,
     pub menu_sel: usize,
     pub menu_screen: MenuScreen,
     pub option_sel: usize,
@@ -284,6 +293,8 @@ impl App {
             side_pane_open: false,
             library_columns_open: false,
             pending_key: None,
+            load_failures: 0,
+            warned_stale: false,
             menu_sel: 0,
             menu_screen: MenuScreen::Main,
             option_sel: 0,
@@ -462,7 +473,17 @@ impl App {
             }
             PlayerEvent::EndFile { reason } => {
                 if reason == "error" {
-                    self.notify("track failed to load, skipping");
+                    self.load_failures += 1;
+                    // One failure is ordinary: videos get deleted, and some
+                    // are region-locked. A run of them is the extractor
+                    // having fallen behind YouTube, which is the single most
+                    // common reason this program stops working.
+                    if self.load_failures >= FAILURES_BEFORE_BLAMING_YTDLP && !self.warned_stale {
+                        self.warned_stale = true;
+                        self.check_extractor_freshness();
+                    } else {
+                        self.notify("track failed to load, skipping");
+                    }
                 }
             }
             PlayerEvent::Idle => {
@@ -474,7 +495,10 @@ impl App {
                 self.notify("mpv exited");
                 self.should_quit = true;
             }
-            PlayerEvent::FileLoaded => {}
+            PlayerEvent::FileLoaded => {
+                // Something played, so whatever went wrong was that track.
+                self.load_failures = 0;
+            }
         }
     }
 

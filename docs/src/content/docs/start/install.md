@@ -144,6 +144,20 @@ ytdlp_path = "/opt/bin/yt-dlp"
 `youtube-dl` is accepted as a fallback when yt-dlp is not there, though it is
 much slower and breaks more often.
 
+## Keeping yt-dlp current
+
+yt-dlp releases roughly monthly, and YouTube breaks it more often than that.
+**A stale yt-dlp is the most common reason a working ytkew stops playing
+anything.** After three failures in a row ytkew checks the version and says
+how old it is, and `--diagnose` reports it at any time.
+
+```sh
+yt-dlp -U                 # self-updating standalone binary
+pipx upgrade yt-dlp
+sudo apt install --only-upgrade yt-dlp
+brew upgrade yt-dlp
+```
+
 ## Why yt-dlp
 
 ytkew talks to YouTube Music through a Rust library, but that library only
