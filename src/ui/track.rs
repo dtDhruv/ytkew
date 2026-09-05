@@ -17,6 +17,7 @@ use super::views::{centered_row, panel};
 /// visualizer with the progress bar beneath it.
 pub(super) fn draw_track(f: &mut Frame, area: Rect, app: &mut App) {
     let (player, side) = track_panes(area, app);
+    let side_open = side.is_some();
     // Input needs to know whether there is a side pane to steer the selection
     // keys at; the renderer is what knows the terminal is wide enough.
     app.side_pane_open = side.is_some();
@@ -47,7 +48,7 @@ pub(super) fn draw_track(f: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
 
-    let l = track_layout(area, app);
+    let l = track_layout(area, app, side_open);
 
     if let Some(rect) = l.cover {
         if app.graphics_active() {

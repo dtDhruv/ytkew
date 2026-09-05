@@ -142,7 +142,156 @@ pub(super) fn draw_queue(f: &mut Frame, area: Rect, app: &mut App) {
     app.hits.list = Some((area, start));
 }
 
+/// Narrowest column worth drawing: below this, labels are all ellipsis.
+const LIB_COL_MIN_WIDTH: u16 = 20;
+
+/// How many columns the miller view gets, or 0 to fall back to the stacked
+/// tree. Two is the minimum that says anything the tree does not.
+fn library_column_count(inner_width: u16) -> usize {
+    let fits = (inner_width / LIB_COL_MIN_WIDTH) as usize;
+    if fits < 2 {
+        0
+    } else {
+        fits.min(4)
+    }
+}
+
+/// The library as side-by-side columns, one per level, in the manner of a
+/// file manager: the chain you walked to get here stays on screen instead of
+/// being implied by indentation.
+///
+/// Falls back to the stacked tree when the pane is too narrow for two
+/// columns, which is what happens in the track view's side pane and on a
+/// small terminal.
 pub(super) fn draw_library(f: &mut Frame, area: Rect, app: &mut App) {
+    let want = app.cfg.library_layout == crate::config::LibraryLayout::Columns;
+    let cols = if want {
+        library_column_count(area.width.saturating_sub(2))
+    } else {
+        0
+    };
+    app.library_columns_open = cols >= 2 && !app.library_rows.is_empty();
+    if app.library_columns_open {
+        draw_library_columns(f, area, app, cols);
+    } else {
+        draw_library_tree(f, area, app);
+    }
+}
+
+fn draw_library_columns(f: &mut Frame, area: Rect, app: &mut App, max_cols: usize) {
+    let columns = app.library_columns();
+    if columns.is_empty() {
+        app.library_columns_open = false;
+        return draw_library_tree(f, area, app);
+    }
+    // Position within the level being read, which is the useful number here:
+    // the depth is already obvious from how many columns are on screen.
+    let count = columns
+        .iter()
+        .rfind(|c| c.selected.is_some())
+        .map(|c| (c.selected.unwrap_or(0), c.rows.len()));
+    let inner = panel(f, area, "library", count, app);
+
+    // Show the deepest columns: the cursor and where it can go next matter
+    // more than the root you already left.
+    let first = columns.len().saturating_sub(max_cols);
+    let shown = &columns[first..];
+    let n = shown.len() as u16;
+    let seps = n.saturating_sub(1);
+    // The rightmost column carries the longest labels -- track titles, where
+    // the parent levels are short category and playlist names -- so give it
+    // twice the share rather than dividing evenly and truncating it.
+    let shares = (n + 1) as u32;
+    let unit = (inner.width.saturating_sub(seps)) as u32 / shares;
+    if unit == 0 {
+        app.library_columns_open = false;
+        return draw_library_tree(f, area, app);
+    }
+
+    let accent = app.palette.accent().to_color();
+    let dim = app.palette.secondary().to_color();
+    let faint = app.palette.dark.to_color();
+    // The focused column is the last one the cursor runs through; anything to
+    // its right is a preview of what stepping in would show.
+    let focused = shown.iter().rposition(|c| c.selected.is_some());
+
+    let mut hits = Vec::new();
+    let mut x = inner.x;
+    for (ci, col) in shown.iter().enumerate() {
+        // The last column takes the remainder, so the panel fills exactly.
+        let w = if ci + 1 == shown.len() {
+            (inner.x + inner.width).saturating_sub(x)
+        } else {
+            unit as u16
+        };
+        let rect = Rect::new(x, inner.y, w, inner.height);
+        let is_focused = focused == Some(ci);
+        let sel = col.selected.unwrap_or(0);
+        let (start, end) = window(sel, col.rows.len(), rect.height as usize);
+        let bar_w: u16 = if col.rows.len() > rect.height as usize {
+            1
+        } else {
+            0
+        };
+        let text_w = rect.width.saturating_sub(bar_w + 2) as usize;
+
+        let lines: Vec<Line> = (start..end)
+            .map(|i| {
+                let Some(node) = app.node_at(&col.rows[i]) else {
+                    return Line::from("");
+                };
+                let is_song = node.kind.is_song();
+                // Whether stepping right leads anywhere, without needing to.
+                let arrow = if is_song {
+                    " "
+                } else if node.loading {
+                    "\u{22ef}"
+                } else {
+                    "\u{25b8}"
+                };
+                let base = if is_song {
+                    Style::default().fg(faint)
+                } else {
+                    Style::default().fg(dim)
+                };
+                let style = match (col.selected == Some(i), is_focused) {
+                    // Only the focused column gets a solid cursor; the trail
+                    // behind it is marked, not competing for attention.
+                    (true, true) => Style::default()
+                        .fg(accent)
+                        .add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                    (true, false) => base.fg(accent).add_modifier(Modifier::BOLD),
+                    _ => base,
+                };
+                Line::from(vec![
+                    Span::styled(fit(&format!(" {}", node.kind.label()), text_w), style),
+                    Span::styled(format!(" {arrow}"), Style::default().fg(faint)),
+                ])
+            })
+            .collect();
+        Paragraph::new(lines).render(rect, f.buffer_mut());
+        if bar_w == 1 {
+            scrollbar(f, rect, sel, col.rows.len(), app);
+        }
+        hits.push((rect, start, first + ci));
+
+        x += w;
+        if ci + 1 < shown.len() {
+            // A rule rather than a gap: it reads as one browser split into
+            // levels rather than several unrelated lists.
+            let sep: Vec<Line> = (0..inner.height)
+                .map(|_| Line::from(Span::styled("\u{2502}", Style::default().fg(faint))))
+                .collect();
+            Paragraph::new(sep).render(Rect::new(x, inner.y, 1, inner.height), f.buffer_mut());
+            x += 1;
+        }
+    }
+    app.hits.list = None;
+    app.hits.lib_columns = hits;
+}
+
+fn draw_library_tree(f: &mut Frame, area: Rect, app: &mut App) {
+    app.hits.lib_columns.clear();
     let n = app.library_rows.len();
     let area = panel(
         f,

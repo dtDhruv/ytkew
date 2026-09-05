@@ -21,6 +21,10 @@ pub struct HitRegions {
     /// Where the bar's track actually starts and how wide it is, since the
     /// labels either side are not seekable.
     pub progress_track: Option<(u16, u16)>,
+    /// Library columns: the area, the entry its first row shows, and which
+    /// depth it draws. Replaces `list` while the miller view is up, since one
+    /// flat index cannot address several columns.
+    pub lib_columns: Vec<(ratatui::layout::Rect, usize, usize)>,
 }
 
 impl App {
@@ -99,12 +103,27 @@ impl App {
 
     /// Item index under the pointer, if it is over a list row.
     pub(crate) fn row_at(&self, col: u16, row: u16) -> Option<usize> {
+        if !self.hits.lib_columns.is_empty() {
+            return self.library_row_at(col, row);
+        }
         let (r, start) = self.hits.list?;
         if col < r.x || col >= r.x + r.width || row < r.y || row >= r.y + r.height {
             return None;
         }
         let index = start + (row - r.y) as usize;
         (index < self.list_len()).then_some(index)
+    }
+
+    /// Resolve a click in the column view back to a row in the stacked list,
+    /// which is what `library_sel` indexes.
+    fn library_row_at(&self, col: u16, row: u16) -> Option<usize> {
+        let (rect, start, depth) = self.hits.lib_columns.iter().copied().find(|(r, _, _)| {
+            col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height
+        })?;
+        let columns = self.library_columns();
+        let column = columns.get(depth)?;
+        let path = column.rows.get(start + (row - rect.y) as usize)?;
+        self.library_row_index(path)
     }
 
     /// Fraction along a progress bar that was clicked, if any.
@@ -155,9 +174,21 @@ impl App {
         }
     }
 
+    /// True while the library pane is showing columns and is the pane the
+    /// keys act on.
+    pub(crate) fn in_library_columns(&self) -> bool {
+        self.view == View::Library && self.library_columns_open
+    }
+
     pub(crate) fn move_selection(&mut self, delta: isize) {
         if self.view == View::Lyrics {
             self.lyrics_scroll = self.lyrics_scroll.saturating_add_signed(delta as i16);
+            return;
+        }
+        // In columns, up and down stay within one level. Walking into
+        // children would slide the cursor out of the list being read.
+        if self.in_library_columns() {
+            self.library_move_sibling(delta);
             return;
         }
         let len = self.list_len();
@@ -171,6 +202,10 @@ impl App {
     }
 
     pub(crate) fn set_selection(&mut self, to: usize) {
+        if self.in_library_columns() {
+            self.library_edge_sibling(to > 0);
+            return;
+        }
         let len = self.list_len();
         if len == 0 {
             return;
@@ -253,6 +288,11 @@ impl App {
             Action::Stop => {
                 let _ = self.player.stop();
             }
+            // Left and right walk the columns while the library is showing
+            // them. Every column browser works this way, and these keys have
+            // no list to steer in that pane otherwise.
+            Action::Prev if self.in_library_columns() => self.library_ascend(),
+            Action::Next if self.in_library_columns() => self.library_descend(),
             Action::Next => self.next_track().await,
             Action::Prev => self.prev_track(),
             Action::SeekForward => {

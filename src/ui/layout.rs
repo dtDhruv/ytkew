@@ -37,14 +37,14 @@ const MIN_COL_WIDTH: u16 = 36;
 /// Rows of chrome above the content: the tab strip and its rule.
 pub const TABBAR_ROWS: u16 = 2;
 
-pub fn track_layout(area: Rect, app: &App) -> TrackLayout {
+pub fn track_layout(area: Rect, app: &App, fill: bool) -> TrackLayout {
     let viz_h = if matches!(app.cfg.visualizer_mode, VisualizerMode::Off) {
         0
     } else {
         app.cfg.visualizer_height
     };
     let draws_cover = app.cover_visible && app.cfg.cover_mode.draws_anything();
-    compute_track_layout(area, app.cell_px, viz_h, draws_cover)
+    compute_track_layout_with(area, app.cell_px, viz_h, draws_cover, fill)
 }
 
 /// The geometry, free of `App` so it can be tested directly.
@@ -53,6 +53,19 @@ pub fn compute_track_layout(
     cell_px: (u16, u16),
     visualizer_height: u16,
     draws_cover: bool,
+) -> TrackLayout {
+    compute_track_layout_with(area, cell_px, visualizer_height, draws_cover, false)
+}
+
+/// `fill` widens the text column to the whole pane instead of tying it to the
+/// cover. Used by the split view, where the pane belongs to the player alone,
+/// so a title has no reason to truncate at the cover's edge.
+pub fn compute_track_layout_with(
+    area: Rect,
+    cell_px: (u16, u16),
+    visualizer_height: u16,
+    draws_cover: bool,
+    fill: bool,
 ) -> TrackLayout {
     let viz_h = visualizer_height.min(area.height / 3);
     // Fixed rows: gap after the cover, metadata, gap, visualizer, bar.
@@ -87,13 +100,18 @@ pub fn compute_track_layout(
     // line up with the art's left edge -- kew ties its visualizer width to
     // the cover the same way. A floor keeps the text readable when the cover
     // is small; above that floor the two are equal and the alignment is exact.
-    let col_w = cover_w
-        .max(if cover_w > 0 {
-            MIN_COL_WIDTH
-        } else {
-            (area.width * 2 / 3).max(24)
-        })
-        .min(area.width);
+    let col_w = if fill {
+        // One column of breathing room either side of the border.
+        area.width.saturating_sub(2).max(1)
+    } else {
+        cover_w
+            .max(if cover_w > 0 {
+                MIN_COL_WIDTH
+            } else {
+                (area.width * 2 / 3).max(24)
+            })
+            .min(area.width)
+    };
     let x = area.x + (area.width.saturating_sub(col_w)) / 2;
 
     // Centre the whole block vertically so leftover space is shared top and
@@ -150,6 +168,8 @@ const SIDE_MIN_WIDTH: u16 = 30;
 /// A column between the panels. Two borders meeting flush reads as one thick
 /// rule rather than two panels.
 const PANE_GAP: u16 = 1;
+/// Past this the player column is mostly margin and the list wants the room.
+const PLAYER_PANE_MAX: u16 = 56;
 
 /// Split the body into the now-playing panel and an optional side panel.
 ///
@@ -169,16 +189,20 @@ pub fn compute_track_panes(
     if !side_pane || body.width < SPLIT_MIN_WIDTH {
         return (body, None);
     }
-    // The player column is sized to the widest cover it will ever hold --
-    // the row cap times the cell aspect -- plus its border and a little
-    // breathing room. Anything beyond that is dead space, so it goes to the
-    // list, which reads better wide than narrow.
+    // Wide enough for the largest cover it can hold -- the row cap times the
+    // cell aspect -- and then a share of what is left, since the title,
+    // progress bar and spectrum all widen with the column even though the
+    // cover cannot. Capped, because past a point it is the list that wants
+    // the room.
     let (cw, ch) = cell_px;
     let ratio = (ch as f32 / cw.max(1) as f32).max(1.0);
     let widest_cover = (COVER_MAX_ROWS as f32 * ratio).round() as u16;
-    let left = widest_cover
-        .saturating_add(6)
-        .max(MIN_COL_WIDTH + 4)
+    let floor = widest_cover.saturating_add(6).max(MIN_COL_WIDTH + 4);
+    // A very tall cell can push the floor past the cap; the cover wins, since
+    // the alternative is clipping it.
+    let cap = PLAYER_PANE_MAX.max(floor);
+    let left = (body.width * 2 / 5)
+        .clamp(floor, cap)
         .min(body.width / 2)
         .min(body.width - SIDE_MIN_WIDTH - PANE_GAP);
     (
@@ -194,8 +218,8 @@ pub fn compute_track_panes(
 
 /// Where the cover goes, for the sixel/kitty painter.
 pub fn cover_rect(area: Rect, app: &App) -> Option<Rect> {
-    let (player, _) = track_panes(area, app);
-    track_layout(track_inner(player), app).cover
+    let (player, side) = track_panes(area, app);
+    track_layout(track_inner(player), app, side.is_some()).cover
 }
 
 /// The region between the tab strip and the footer.
@@ -395,14 +419,50 @@ mod tests {
 
     #[test]
     fn the_player_pane_does_not_hoard_width_it_cannot_use() {
-        // The cover is capped in rows, so past a point a wider player column
-        // is just dead space -- the whole reason for the split.
-        let (player, _) = panes(300, 40, true);
-        let widest_cover = COVER_MAX_ROWS * 2;
+        // It widens with the terminal, because the title, progress bar and
+        // spectrum all use the extra room -- but only up to a point, or the
+        // list loses the space the split was meant to reclaim.
+        let (player, side) = panes(300, 40, true);
         assert!(
-            player.width <= widest_cover + 8,
-            "player pane {} much wider than the {widest_cover}-column cover",
+            player.width <= PLAYER_PANE_MAX,
+            "player pane {} past the cap",
             player.width
+        );
+        assert!(
+            side.unwrap().width > player.width,
+            "past the cap the list should get the majority"
+        );
+    }
+
+    #[test]
+    fn the_player_pane_widens_with_the_terminal_up_to_the_cap() {
+        let narrow = panes(SPLIT_MIN_WIDTH, 40, true).0.width;
+        let mid = panes(130, 40, true).0.width;
+        assert!(mid > narrow, "{mid} should exceed {narrow}");
+        assert!(mid <= PLAYER_PANE_MAX);
+    }
+
+    #[test]
+    fn filling_widens_the_text_column_without_moving_the_cover() {
+        // The point of `fill`: in a pane that belongs to the player alone, a
+        // title has no reason to truncate at the cover's edge.
+        let area = Rect::new(1, 3, 50, 24);
+        let tied = compute_track_layout_with(area, (8, 16), 6, true, false);
+        let filled = compute_track_layout_with(area, (8, 16), 6, true, true);
+        assert!(
+            filled.meta.width > tied.meta.width,
+            "filled column {} should beat {}",
+            filled.meta.width,
+            tied.meta.width
+        );
+        assert_eq!(
+            filled.cover.unwrap().width,
+            tied.cover.unwrap().width,
+            "the cover stays square; only the text column grows"
+        );
+        assert!(
+            filled.meta.x + filled.meta.width <= area.x + area.width,
+            "the column must stay inside the pane"
         );
     }
 

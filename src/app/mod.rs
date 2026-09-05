@@ -145,6 +145,9 @@ pub struct App {
     /// Whether the track view is currently showing a side pane. Set by the
     /// renderer, since only it knows the terminal is wide enough for one.
     pub side_pane_open: bool,
+    /// Whether the library is drawn as columns right now. Set by the
+    /// renderer, which is what knows the pane is wide enough.
+    pub library_columns_open: bool,
     /// First key of a two-key sequence, waiting on the second.
     pub pending_key: Option<char>,
     pub menu_sel: usize,
@@ -256,6 +259,7 @@ impl App {
             themes,
             menu_open: false,
             side_pane_open: false,
+            library_columns_open: false,
             pending_key: None,
             menu_sel: 0,
             menu_screen: MenuScreen::Main,
@@ -589,7 +593,7 @@ impl App {
         }
     }
 
-    fn node_at(&self, path: &[usize]) -> Option<&LibNode> {
+    pub(crate) fn node_at(&self, path: &[usize]) -> Option<&LibNode> {
         let (&first, rest) = path.split_first()?;
         let mut node = self.library.get(first)?;
         for &i in rest {

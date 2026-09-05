@@ -204,6 +204,10 @@ impl Keymap {
             (Char('H'), SHIFT, Prev),
             (Right, NONE, Next),
             (Left, NONE, Prev),
+            // In the library's column view these ascend and descend; the
+            // transport keeps H/L and the arrows everywhere else.
+            (Char('l'), NONE, Next),
+            (Char('h'), NONE, Prev),
             (Char('w'), NONE, SeekForward),
             (Char('b'), NONE, SeekBack),
             // Volume
@@ -383,7 +387,17 @@ mod tests {
             km.resolve(KeyCode::Char('L'), KeyModifiers::SHIFT),
             Some(Action::Next)
         );
-        assert_eq!(km.resolve(KeyCode::Char('l'), KeyModifiers::NONE), None);
+        // Lowercase h and l carry the same actions, which the library's
+        // column view reinterprets as stepping out and in. Outside that pane
+        // they are the transport, same as the arrows.
+        assert_eq!(
+            km.resolve(KeyCode::Char('l'), KeyModifiers::NONE),
+            Some(Action::Next)
+        );
+        assert_eq!(
+            km.resolve(KeyCode::Char('h'), KeyModifiers::NONE),
+            Some(Action::Prev)
+        );
     }
 
     #[test]

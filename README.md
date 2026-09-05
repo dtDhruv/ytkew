@@ -216,6 +216,21 @@ side_pane = "queue"           # off | queue | library
 player column has nothing to select. Below 88 columns it collapses back to
 kew's single centred column on its own.
 
+### Library columns
+
+The library draws each level as its own column, file-manager style, so the
+path you walked stays on screen instead of being implied by indentation. `←`
+and `→` step out and in (`h`/`l` under the vim preset), `j`/`k` stay within a
+level, and the rightmost column previews what is inside the entry under the
+cursor.
+
+```toml
+library_layout = "columns"    # columns | tree
+```
+
+A pane too narrow for two columns falls back to the indented tree on its own,
+which is what happens in the track view's side pane and on a small terminal.
+
 ## Themes
 
 Ten built in, listed in the config. Drop a TOML file in
@@ -253,6 +268,7 @@ visualizer_mode = "bars"      # bars | braille | off
 cover_mode = "auto"           # auto | kitty | sixel | blocks | off
 cell_px = [0, 0]              # cell size in px; [0,0] autodetects
 side_pane = "queue"           # off | queue | library
+library_layout = "columns"    # columns | tree
 cover_enabled = true
 theme = "cover"               # "cover", a built-in, or one of your own
 accent_color = 6              # ANSI index, used only as a last resort

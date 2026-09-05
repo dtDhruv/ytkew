@@ -12,6 +12,34 @@ pub use state::State;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// How the library pane arranges the tree.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LibraryLayout {
+    /// Side-by-side columns, one per level, like a file manager. Falls back
+    /// to the tree on a pane too narrow for two columns.
+    #[default]
+    Columns,
+    /// One list, children indented under their parent.
+    Tree,
+}
+
+impl LibraryLayout {
+    pub fn name(self) -> &'static str {
+        match self {
+            LibraryLayout::Columns => "columns",
+            LibraryLayout::Tree => "tree",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Self {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "tree" => LibraryLayout::Tree,
+            _ => LibraryLayout::Columns,
+        }
+    }
+}
+
 /// What to show beside the now-playing column when there is room.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -141,6 +169,7 @@ pub struct Config {
     /// Volume used on a first run, before any state has been saved.
     pub keys: crate::config::keymap::KeyPreset,
     pub side_pane: SidePane,
+    pub library_layout: LibraryLayout,
     pub initial_volume: f64,
     pub volume_max: f64,
     pub volume_step: f64,
@@ -174,6 +203,7 @@ impl Default for Config {
             hide_help: false,
             keys: crate::config::keymap::KeyPreset::Kew,
             side_pane: SidePane::Queue,
+            library_layout: LibraryLayout::Columns,
             initial_volume: 100.0,
             volume_max: 100.0,
             volume_step: 5.0,
@@ -238,6 +268,9 @@ cell_px = [0, 0]              # cell size in px for sixel. [0,0] = unset.
                               # resize until it fits. It saves automatically.
 side_pane = "queue"           # off | queue | library -- what to show beside
                               # the now-playing column on a wide terminal
+library_layout = "columns"    # columns | tree -- columns puts each level
+                              # side by side, file-manager style, and falls
+                              # back to the tree when the pane is too narrow
 cover_enabled = true
 
 # Colours. "cover" takes them from the album art, which is the default and

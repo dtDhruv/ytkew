@@ -102,7 +102,140 @@ pub struct LibRow {
     pub is_song: bool,
 }
 
+/// One column of the miller view: the siblings at a single depth.
+///
+/// Derived from the same tree the stacked view walks, so the two are always
+/// showing the same library -- only the arrangement differs.
+pub struct LibColumn {
+    /// Path to each entry, so a click resolves straight back to a node.
+    pub rows: Vec<Vec<usize>>,
+    /// Which entry the cursor passes through, if it passes through this
+    /// column at all. The preview column on the right has none.
+    pub selected: Option<usize>,
+}
+
 impl App {
+    /// Path from the root to the cursor.
+    pub(crate) fn library_cursor(&self) -> Vec<usize> {
+        self.library_rows
+            .get(self.library_sel)
+            .map(|r| r.path.clone())
+            .unwrap_or_default()
+    }
+
+    /// Where a path sits in the stacked row list, which is what `library_sel`
+    /// indexes. `None` once an ancestor is collapsed.
+    pub(crate) fn library_row_index(&self, path: &[usize]) -> Option<usize> {
+        self.library_rows.iter().position(|r| r.path == path)
+    }
+
+    /// The chain of sibling lists from the root down to the cursor, plus a
+    /// preview of what is inside the focused node.
+    pub(crate) fn library_columns(&self) -> Vec<LibColumn> {
+        let cursor = self.library_cursor();
+        let mut cols = Vec::new();
+        let mut level: &[LibNode] = &self.library;
+        let mut prefix: Vec<usize> = Vec::new();
+        // One past the cursor, so the last iteration yields the preview.
+        for depth in 0..=cursor.len() {
+            if level.is_empty() {
+                break;
+            }
+            let selected = cursor.get(depth).copied();
+            cols.push(LibColumn {
+                rows: (0..level.len())
+                    .map(|i| {
+                        let mut p = prefix.clone();
+                        p.push(i);
+                        p
+                    })
+                    .collect(),
+                selected,
+            });
+            let Some(i) = selected else { break };
+            let Some(node) = level.get(i) else { break };
+            prefix.push(i);
+            level = &node.children;
+        }
+        cols
+    }
+
+    /// Move the cursor among its siblings, staying at the same depth. In the
+    /// stacked view the same keys walk into children; in columns that would
+    /// jump the cursor sideways out of the list you are reading.
+    pub(crate) fn library_move_sibling(&mut self, delta: isize) {
+        let cursor = self.library_cursor();
+        let Some((&last, parent)) = cursor.split_last() else {
+            return;
+        };
+        let count = match self.node_at(parent) {
+            Some(node) => node.children.len(),
+            None if parent.is_empty() => self.library.len(),
+            None => return,
+        };
+        if count == 0 {
+            return;
+        }
+        let next = (last as isize + delta).clamp(0, count as isize - 1) as usize;
+        let mut path = parent.to_vec();
+        path.push(next);
+        if let Some(i) = self.library_row_index(&path) {
+            self.library_sel = i;
+        }
+    }
+
+    /// Jump to the first or last sibling.
+    pub(crate) fn library_edge_sibling(&mut self, last: bool) {
+        self.library_move_sibling(if last { isize::MAX / 2 } else { isize::MIN / 2 });
+    }
+
+    /// Step out to the parent column.
+    pub(crate) fn library_ascend(&mut self) {
+        let cursor = self.library_cursor();
+        if cursor.len() < 2 {
+            return;
+        }
+        let parent = cursor[..cursor.len() - 1].to_vec();
+        if let Some(i) = self.library_row_index(&parent) {
+            self.library_sel = i;
+        }
+    }
+
+    /// Step into the focused node, loading it first if need be.
+    pub(crate) fn library_descend(&mut self) {
+        let path = self.library_cursor();
+        let Some(node) = self.node_at(&path) else {
+            return;
+        };
+        if node.kind.is_song() {
+            return;
+        }
+        if !node.loaded {
+            // Same path the stacked view takes: mark it loading and fetch.
+            if !node.loading {
+                let kind = node.kind.clone();
+                if let Some(n) = self.node_at_mut(&path) {
+                    n.loading = true;
+                }
+                self.rebuild_library_rows();
+                self.spawn_library_load(path, kind);
+            }
+            return;
+        }
+        if node.children.is_empty() {
+            return;
+        }
+        if let Some(n) = self.node_at_mut(&path) {
+            n.expanded = true;
+        }
+        self.rebuild_library_rows();
+        let mut child = path;
+        child.push(0);
+        if let Some(i) = self.library_row_index(&child) {
+            self.library_sel = i;
+        }
+    }
+
     /// Build the root of the tree. Children load on demand.
     pub fn ensure_library(&mut self) {
         if !self.library.is_empty() {
@@ -210,6 +343,12 @@ impl App {
         // just opening it.
         if jump {
             self.play_selected_library_node();
+            return;
+        }
+        // In columns, enter means the same as stepping right. Toggling the
+        // node shut would collapse the level the cursor is standing in.
+        if self.in_library_columns() {
+            self.library_descend();
             return;
         }
         // Containers: collapse if open, expand if already fetched, else load.

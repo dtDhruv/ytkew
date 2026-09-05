@@ -38,6 +38,7 @@ pub enum Setting {
     Theme,
     Keys,
     SidePane,
+    LibraryLayout,
     Renderer,
     ShowCover,
     Visualizer,
@@ -46,10 +47,11 @@ pub enum Setting {
     AutoplayRadio,
 }
 
-pub const SETTINGS: [Setting; 9] = [
+pub const SETTINGS: [Setting; 10] = [
     Setting::Theme,
     Setting::Keys,
     Setting::SidePane,
+    Setting::LibraryLayout,
     Setting::Renderer,
     Setting::ShowCover,
     Setting::Visualizer,
@@ -64,6 +66,7 @@ impl Setting {
             Setting::Theme => "Theme",
             Setting::Keys => "Key bindings",
             Setting::SidePane => "Side pane",
+            Setting::LibraryLayout => "Library layout",
             Setting::Renderer => "Cover renderer",
             Setting::ShowCover => "Show cover art",
             Setting::Visualizer => "Visualizer",
@@ -83,6 +86,9 @@ impl Setting {
             }
             Setting::SidePane => {
                 "What sits beside the now-playing column on a wide terminal. j/k and enter act on it."
+            }
+            Setting::LibraryLayout => {
+                "Columns puts each level side by side, file-manager style; left and right walk in and out. Narrow panes fall back to the tree."
             }
             Setting::Renderer => {
                 "How album art is drawn. Kitty sizes in cells and needs no tuning; sixel needs an accurate cell size; blocks work anywhere."
@@ -131,6 +137,7 @@ impl App {
             }
             Setting::Keys => pick(&["kew", "vim"], self.cfg.keys.name()),
             Setting::SidePane => pick(&["off", "queue", "library"], self.cfg.side_pane.name()),
+            Setting::LibraryLayout => pick(&["columns", "tree"], self.cfg.library_layout.name()),
             Setting::Renderer => pick(
                 &["auto", "kitty", "sixel", "blocks"],
                 self.cfg.cover_mode.name(),
@@ -201,6 +208,9 @@ impl App {
                 // The player column changes width, so the art must be redrawn.
                 self.clear_cover_art();
                 self.cfg.side_pane = crate::config::SidePane::from_name(value);
+            }
+            Setting::LibraryLayout => {
+                self.cfg.library_layout = crate::config::LibraryLayout::from_name(value);
             }
             Setting::Renderer => {
                 self.clear_cover_art();
