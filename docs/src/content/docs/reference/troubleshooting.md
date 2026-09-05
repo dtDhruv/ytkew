@@ -27,7 +27,9 @@ whether those files exist.
 | Audio sounds fuzzy or clipped | Volume above 100%. See [Configuration](/ytkew/reference/configuration/). |
 | Cover art is the wrong size | Sixel with a bad cell size. Press `[` and `]`, or set `cover_mode = "blocks"`. |
 | Cover art is missing entirely | The terminal answered no to both capability queries. Half-blocks should still draw — check `cover_enabled`. |
-| `mpv: failed to spawn` | `mpv` is not on `PATH`. |
+| `failed to spawn mpv` | mpv is not on `PATH`. The error lists install commands. |
+| `yt-dlp not found on PATH` | Install it, or set `ytdlp_path`. Nothing plays without it. |
+| Tracks fail to load, but yt-dlp is installed | Almost always a stale yt-dlp. `pipx install yt-dlp` or `yt-dlp -U`. |
 | First track stalls for seconds | Normal: yt-dlp has to resolve the stream. Later tracks are prefetched. |
 | Library is empty but you have playlists | Liked Music and Library Songs are different sets. See [Library](/ytkew/guide/library/). |
 | A playlist stops at 5,000 tracks | The paging cap. It is there so a runaway continuation cannot spin forever. |

@@ -143,6 +143,29 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
     }
 
     println!();
+    println!("playback:");
+    // The two external programs ytkew cannot work without. Reported here
+    // because a missing extractor otherwise presents as a player that runs
+    // perfectly and never makes a sound.
+    let cfg = crate::config::Config::load(cfg_dir);
+    match crate::player::find_extractor(&cfg.ytdlp_path) {
+        Ok(path) => println!("  yt-dlp       {}", path.display()),
+        Err(_) => println!("  yt-dlp       MISSING -- nothing will play"),
+    }
+    match std::process::Command::new("mpv")
+        .arg("--version")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        Ok(out) => {
+            let v = String::from_utf8_lossy(&out.stdout);
+            println!("  mpv          {}", v.lines().next().unwrap_or("present"));
+        }
+        Err(_) => println!("  mpv          MISSING -- nothing will play"),
+    }
+
+    println!();
     println!("terminal:");
     println!(
         "  TERM={}  TERM_PROGRAM={}",

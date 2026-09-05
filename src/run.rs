@@ -46,9 +46,9 @@ pub async fn run(cli: Cli) -> Result<()> {
     let (api_handle, warning) = api::Api::connect(&cfg_dir).await;
     let api = Arc::new(api_handle);
 
-    let (player, mut player_rx) = Player::spawn(state.volume, cfg.volume_max)
+    let (player, mut player_rx) = Player::spawn(state.volume, cfg.volume_max, &cfg.ytdlp_path)
         .await
-        .context("starting mpv")?;
+        .context("starting playback")?;
     let (tx, mut app_rx) = mpsc::unbounded_channel::<AppMsg>();
     let covers = Arc::new(CoverLoader::new(api::cache_dir()));
 

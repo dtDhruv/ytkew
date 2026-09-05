@@ -78,17 +78,28 @@ got the interface right.
 
 ## Requirements
 
-`mpv` and `yt-dlp` on `PATH`, and a truecolor terminal. PipeWire is needed for
-the visualizer only. A YouTube Music account is needed only for your own
-library — search, radio and lyrics work signed out.
+`mpv` and `yt-dlp` on `PATH` — ytkew refuses to start without them — plus a
+truecolor terminal. PipeWire is needed for the visualizer only. A YouTube
+Music account is needed only for your own library; search, radio and lyrics
+work signed out.
+
+mpv does the playing; yt-dlp turns a YouTube video into a playable stream.
+[Why both are needed →](https://dtdhruv.github.io/ytkew/start/install/#why-yt-dlp)
 
 ## Install
 
 ```sh
+# Dependencies — apt, dnf, pacman, zypper or brew
+sudo apt install mpv yt-dlp
+
 git clone https://github.com/dtDhruv/ytkew
 cd ytkew
 make install
 ```
+
+A stale `yt-dlp` is the usual cause of tracks failing to load. If your
+distribution's is old, `pipx install yt-dlp` gets a current one.
+[Per-platform instructions →](https://dtdhruv.github.io/ytkew/start/install/)
 
 That puts the binary in `~/.local/bin` and the desktop entry and icon under
 `~/.local/share`. `PREFIX=/usr/local sudo make install` for a system-wide

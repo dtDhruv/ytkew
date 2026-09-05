@@ -167,6 +167,8 @@ pub struct Config {
     pub cell_px: [u16; 2],
     pub hide_help: bool,
     /// Volume used on a first run, before any state has been saved.
+    /// Where to find yt-dlp. Empty searches PATH.
+    pub ytdlp_path: String,
     pub keys: crate::config::keymap::KeyPreset,
     pub side_pane: SidePane,
     pub library_layout: LibraryLayout,
@@ -201,6 +203,7 @@ impl Default for Config {
             cover_mode: CoverMode::Auto,
             cell_px: [0, 0],
             hide_help: false,
+            ytdlp_path: String::new(),
             keys: crate::config::keymap::KeyPreset::Kew,
             side_pane: SidePane::Queue,
             library_layout: LibraryLayout::Columns,
@@ -286,6 +289,10 @@ theme = "cover"
 # theme_colors = ["#504945", "#d5c4a1", "#fabd2f"]
 
 accent_color = 6              # ANSI index, used only as a last resort
+
+# ytdlp_path = ""             # where to find yt-dlp. Empty searches PATH,
+                              # trying yt-dlp then youtube-dl. Set it if
+                              # yours lives somewhere unusual.
 
 keys = "kew"                  # kew | vim -- vim swaps navigation for vim
                               # motions (gg, G, ctrl+d/u, dd, x, J/K) and

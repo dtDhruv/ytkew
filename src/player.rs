@@ -7,9 +7,9 @@
 //! already resolved and buffered before the current ends -- that is what makes
 //! transitions gapless despite every track needing a yt-dlp round trip.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -87,14 +87,90 @@ pub struct Player {
     volume_max: f64,
 }
 
+/// The stream extractors mpv can shell out to, best first.
+const EXTRACTORS: [&str; 2] = ["yt-dlp", "youtube-dl"];
+
+/// Directories to search, from the environment.
+fn path_dirs() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default()
+}
+
+fn is_executable(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !meta.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    true
+}
+
+/// Locate the stream extractor before mpv needs it.
+///
+/// mpv resolves a YouTube URL by running this binary, and without it mpv
+/// still starts, still accepts commands, and fails every single track with
+/// nothing on screen to explain why. That is the worst failure a music
+/// player can have, so it is worth catching at startup and saying plainly.
+pub fn find_extractor(configured: &str) -> Result<PathBuf> {
+    find_extractor_in(configured, &path_dirs())
+}
+
+/// The search itself, with the directories passed in so it can be tested
+/// without touching the process's environment.
+fn find_extractor_in(configured: &str, dirs: &[PathBuf]) -> Result<PathBuf> {
+    let configured = configured.trim();
+    if !configured.is_empty() {
+        let path = PathBuf::from(configured);
+        if is_executable(&path) {
+            return Ok(path);
+        }
+        bail!(
+            "ytdlp_path points at {configured:?}, which is not an executable file.\n\
+             Fix it in the config, or clear it to search PATH instead."
+        );
+    }
+    for name in EXTRACTORS {
+        for dir in dirs {
+            let candidate = dir.join(name);
+            if is_executable(&candidate) {
+                return Ok(candidate);
+            }
+        }
+    }
+    bail!(
+        "yt-dlp not found on PATH.\n\n\
+         mpv needs it to turn a YouTube video into a playable stream; without \
+         it nothing will play.\n\n\
+         Install it with one of:\n  \
+           pipx install yt-dlp\n  \
+           apt install yt-dlp        # or dnf, pacman, zypper\n  \
+           brew install yt-dlp\n\n\
+         Already have it somewhere else? Put the path in \
+         ~/.config/ytkew/config.toml:\n  \
+           ytdlp_path = \"/opt/bin/yt-dlp\""
+    )
+}
+
 impl Player {
     /// Spawn mpv and connect to its IPC socket.
     pub async fn spawn(
         initial_volume: f64,
         volume_max: f64,
+        ytdlp_path: &str,
     ) -> Result<(Self, mpsc::UnboundedReceiver<PlayerEvent>)> {
         let volume_max = volume_max.clamp(100.0, 130.0);
         let initial_volume = initial_volume.clamp(0.0, volume_max);
+        // Before mpv, not after: a missing extractor is the one failure that
+        // otherwise looks like the program working.
+        let extractor = find_extractor(ytdlp_path)?;
         let socket = socket_path();
         let _ = std::fs::remove_file(&socket);
 
@@ -107,7 +183,10 @@ impl Player {
             // Prefer opus (what YouTube Music actually serves) and never fall
             // back to a video-bearing stream.
             .arg("--ytdl-format=bestaudio[acodec=opus]/bestaudio/best")
-            .arg("--script-opts=ytdl_hook-ytdl_path=yt-dlp")
+            .arg(format!(
+                "--script-opts=ytdl_hook-ytdl_path={}",
+                extractor.display()
+            ))
             // The two options that buy us gapless across network tracks.
             .arg("--prefetch-playlist=yes")
             .arg("--gapless-audio=yes")
@@ -125,7 +204,12 @@ impl Player {
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()
-            .context("failed to spawn mpv -- is it installed and on PATH?")?;
+            .context(
+                "failed to spawn mpv.\n\n\
+                 Install it with one of:\n  \
+                   apt install mpv          # or dnf, pacman, zypper\n  \
+                   brew install mpv",
+            )?;
 
         let stream = connect_with_retry(&socket).await?;
         let (read_half, mut write_half) = stream.into_split();
@@ -370,4 +454,98 @@ async fn connect_with_retry(path: &PathBuf) -> Result<UnixStream> {
         "mpv IPC socket never appeared at {} -- mpv may have failed to start",
         path.display()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ytkew-ext-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[cfg(unix)]
+    fn fake_binary(dir: &Path, name: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join(name);
+        std::fs::write(&p, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
+    #[test]
+    fn a_configured_path_is_used_as_given() {
+        let dir = scratch("configured");
+        let bin = fake_binary(&dir, "my-ytdlp");
+        assert_eq!(find_extractor_in(bin.to_str().unwrap(), &[]).unwrap(), bin);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_configured_path_that_is_wrong_says_so_rather_than_falling_back() {
+        // Silently searching PATH would hide the typo and leave the user
+        // wondering why their setting had no effect.
+        let dir = scratch("wrong");
+        let good = fake_binary(&dir, "yt-dlp");
+        let missing = dir.join("not-here");
+        let e = find_extractor_in(missing.to_str().unwrap(), std::slice::from_ref(&dir))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("ytdlp_path"), "got {e}");
+        assert!(e.contains("not an executable file"), "got {e}");
+        assert!(
+            good.exists(),
+            "a usable one on PATH must not rescue a bad setting"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_directory_is_not_an_executable() {
+        let dir = scratch("dir");
+        assert!(!is_executable(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_non_executable_file_is_rejected() {
+        let dir = scratch("noexec");
+        let p = dir.join("yt-dlp");
+        std::fs::write(&p, "text").unwrap();
+        assert!(!is_executable(&p));
+        assert!(find_extractor_in("", std::slice::from_ref(&dir)).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn yt_dlp_is_preferred_over_youtube_dl() {
+        let dir = scratch("both");
+        fake_binary(&dir, "yt-dlp");
+        fake_binary(&dir, "youtube-dl");
+        let found = find_extractor_in("", std::slice::from_ref(&dir)).unwrap();
+        assert_eq!(found.file_name().unwrap(), "yt-dlp");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn youtube_dl_is_accepted_when_yt_dlp_is_absent() {
+        let dir = scratch("fallback");
+        fake_binary(&dir, "youtube-dl");
+        let found = find_extractor_in("", std::slice::from_ref(&dir)).unwrap();
+        assert_eq!(found.file_name().unwrap(), "youtube-dl");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_error_tells_you_how_to_fix_it() {
+        // This message is the whole point of the check: without it a missing
+        // extractor is a player that runs perfectly and never makes a sound.
+        let e = find_extractor_in("", &[]).unwrap_err().to_string();
+        assert!(e.contains("yt-dlp not found"), "got {e}");
+        assert!(e.contains("install yt-dlp"), "got {e}");
+        assert!(e.contains("ytdlp_path"), "got {e}");
+    }
 }
