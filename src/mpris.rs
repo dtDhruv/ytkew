@@ -180,9 +180,7 @@ impl PlayerInterface for Imp {
     }
 
     async fn set_position(&self, _track_id: TrackId, position: Time) -> fdo::Result<()> {
-        self.send(MprisCommand::SetPosition(
-            position.as_micros() as f64 / 1e6,
-        ))
+        self.send(MprisCommand::SetPosition(position.as_micros() as f64 / 1e6))
     }
 
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {

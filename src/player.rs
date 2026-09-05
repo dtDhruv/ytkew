@@ -63,7 +63,9 @@ impl Default for PlayerState {
 #[derive(Clone, Debug)]
 pub enum PlayerEvent {
     /// A file finished. `reason` is mpv's: "eof", "stop", "quit", "error".
-    EndFile { reason: String },
+    EndFile {
+        reason: String,
+    },
     FileLoaded,
     /// mpv moved through its internal playlist on its own (gapless advance).
     PlaylistPos(i64),
@@ -82,7 +84,9 @@ pub struct Player {
 
 impl Player {
     /// Spawn mpv and connect to its IPC socket.
-    pub async fn spawn(initial_volume: f64) -> Result<(Self, mpsc::UnboundedReceiver<PlayerEvent>)> {
+    pub async fn spawn(
+        initial_volume: f64,
+    ) -> Result<(Self, mpsc::UnboundedReceiver<PlayerEvent>)> {
         let socket = socket_path();
         let _ = std::fs::remove_file(&socket);
 
@@ -222,7 +226,6 @@ impl Player {
         self.command(json!(["seek", secs, "absolute"]))
     }
 
-
     pub async fn add_volume(&self, delta: f64) -> Result<f64> {
         let cur = self.state.read().await.volume;
         let next = (cur + delta).clamp(0.0, 130.0);
@@ -230,7 +233,6 @@ impl Player {
         self.state.write().await.volume = next;
         Ok(next)
     }
-
 
     /// Set volume absolutely. MPRIS hands us a level rather than a delta.
     pub async fn set_volume(&self, vol: f64) -> Result<()> {
@@ -246,7 +248,6 @@ impl Player {
     pub async fn playlist_next(&self) -> Result<()> {
         self.command(json!(["playlist-next", "force"]))
     }
-
 
     /// Let mpv loop the current file itself; cheaper and more precise than
     /// re-resolving the stream on every repeat.

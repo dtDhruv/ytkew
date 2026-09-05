@@ -143,9 +143,7 @@ pub fn track_from_playlist_item(item: &PlaylistItem) -> Option<Track> {
         PlaylistItem::Video(v) => Some(Track {
             video_id: v.video_id.get_raw().to_string(),
             title: v.title.clone(),
-            artist: v
-                .channel_name
-                .clone(),
+            artist: v.channel_name.clone(),
             album: None,
             duration: parse_duration(&v.duration),
             duration_text: v.duration.clone(),
@@ -202,4 +200,3 @@ mod tests {
         assert_eq!(upscale_thumbnail(u, 544), u);
     }
 }
-

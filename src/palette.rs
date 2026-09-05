@@ -172,7 +172,11 @@ pub fn extract(pixels: &[Rgb], k: usize) -> Palette {
             l > 8.0 && l < 250.0
         })
         .collect();
-    let samples = if samples.len() < k { pixels.to_vec() } else { samples };
+    let samples = if samples.len() < k {
+        pixels.to_vec()
+    } else {
+        samples
+    };
     if samples.is_empty() {
         return Palette::default();
     }
@@ -262,7 +266,10 @@ mod tests {
         assert!(p.dark.luminance() < p.bright.luminance());
         // And the default still matches kew's cyan.
         let d = Palette::default().accent();
-        assert!(d.1 > d.0 && d.2 > d.0, "default should be cyan-ish, got {d:?}");
+        assert!(
+            d.1 > d.0 && d.2 > d.0,
+            "default should be cyan-ish, got {d:?}"
+        );
     }
 
     #[test]

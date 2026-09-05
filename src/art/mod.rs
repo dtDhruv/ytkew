@@ -1,10 +1,23 @@
-//! Album art: fetch, cache on disk, and render into terminal cells.
+//! Album art: fetching and caching, and the renderers that put it on screen.
 //!
-//! Rendering uses the upper-half-block trick -- each cell draws '▀' with the
-//! top pixel as foreground and the bottom pixel as background, giving two
-//! vertical pixels per cell. That keeps the cover inside ratatui's normal
-//! buffer (unlike sixel, which would need out-of-band passthrough and its own
-//! damage tracking) and it works on any truecolor terminal.
+//! Three renderers, preferred in this order:
+//!
+//! - [`kitty`] sizes placements in *cells*, so the terminal scales the image
+//!   and no cell-pixel measurement is involved. Use it wherever it works.
+//! - [`sixel`] takes pixel dimensions, so it needs [`terminal`] to establish
+//!   how large a cell is -- the fragile part, and the source of most sizing
+//!   bugs.
+//! - Half-blocks, [`render_fit`] below, draw into ratatui's own buffer. They
+//!   are always correctly sized because they are just cells: each draws '▀'
+//!   with the top pixel as foreground and the bottom as background.
+//!
+//! [`quantize`] and [`terminal`] are shared: both protocols reduce colours the
+//! same way, and both need the raw-tty helpers.
+
+pub mod kitty;
+pub mod quantize;
+pub mod sixel;
+pub mod terminal;
 
 use crate::palette::{extract, Palette, Rgb};
 use anyhow::{Context, Result};
@@ -24,7 +37,6 @@ pub struct Cover {
     /// pixel dimensions the cell grid actually works out to.
     pub source: std::sync::Arc<image::RgbImage>,
 }
-
 
 pub struct CoverLoader {
     cache: PathBuf,
@@ -125,7 +137,6 @@ fn px(img: &image::RgbImage, x: u32, y: u32) -> Rgb {
     let p = img.get_pixel(x.min(img.width() - 1), y.min(img.height() - 1));
     Rgb(p[0], p[1], p[2])
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -17,7 +17,7 @@ const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█
 const BRAILLE: [char; 4] = ['⣀', '⣤', '⣶', '⣿'];
 
 /// Draw a cover as upper-half-blocks: fg is the top pixel, bg the bottom.
-pub fn draw_cover(f: &mut Frame, area: Rect, cover: &crate::cover::Cover) {
+pub fn draw_cover(f: &mut Frame, area: Rect, cover: &crate::art::Cover) {
     let buf = f.buffer_mut();
     for (r, row) in cover.cells.iter().enumerate() {
         let y = area.y + r as u16;
@@ -233,7 +233,6 @@ pub fn draw_progress(
     Some((area.x + left_label.len() as u16 + 1, bar_w as u16))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,7 +259,14 @@ mod tests {
     fn full_bar_fills_the_column_bottom_up() {
         let buf = render(4, 4, |f| {
             let area = Rect::new(0, 0, 4, 4);
-            draw_visualizer(f, area, &[1.0], &Palette::default(), VisualizerMode::Bars, 1);
+            draw_visualizer(
+                f,
+                area,
+                &[1.0],
+                &Palette::default(),
+                VisualizerMode::Bars,
+                1,
+            );
         });
         for y in 0..4 {
             assert_eq!(cell_char(&buf, 0, y), '█', "row {y} should be full");
@@ -271,7 +277,14 @@ mod tests {
     fn silence_draws_nothing() {
         let buf = render(4, 4, |f| {
             let area = Rect::new(0, 0, 4, 4);
-            draw_visualizer(f, area, &[0.0], &Palette::default(), VisualizerMode::Bars, 1);
+            draw_visualizer(
+                f,
+                area,
+                &[0.0],
+                &Palette::default(),
+                VisualizerMode::Bars,
+                1,
+            );
         });
         for y in 0..4 {
             assert_eq!(cell_char(&buf, 0, y), ' ');
@@ -282,7 +295,14 @@ mod tests {
     fn half_height_fills_only_the_bottom_half() {
         let buf = render(2, 4, |f| {
             let area = Rect::new(0, 0, 2, 4);
-            draw_visualizer(f, area, &[0.5], &Palette::default(), VisualizerMode::Bars, 1);
+            draw_visualizer(
+                f,
+                area,
+                &[0.5],
+                &Palette::default(),
+                VisualizerMode::Bars,
+                1,
+            );
         });
         // Bottom two rows solid, top two empty.
         assert_eq!(cell_char(&buf, 0, 3), '█');
@@ -294,7 +314,14 @@ mod tests {
     fn bar_width_widens_each_bar() {
         let buf = render(6, 2, |f| {
             let area = Rect::new(0, 0, 6, 2);
-            draw_visualizer(f, area, &[1.0, 1.0], &Palette::default(), VisualizerMode::Bars, 2);
+            draw_visualizer(
+                f,
+                area,
+                &[1.0, 1.0],
+                &Palette::default(),
+                VisualizerMode::Bars,
+                2,
+            );
         });
         for x in 0..4 {
             assert_eq!(cell_char(&buf, x, 1), '█', "col {x} should be filled");
@@ -316,7 +343,13 @@ mod tests {
     fn the_playhead_marker_tracks_position() {
         let at = |elapsed: f64| {
             let buf = render(40, 1, |f| {
-                draw_progress(f, Rect::new(0, 0, 40, 1), elapsed, 100.0, &Palette::default());
+                draw_progress(
+                    f,
+                    Rect::new(0, 0, 40, 1),
+                    elapsed,
+                    100.0,
+                    &Palette::default(),
+                );
             });
             (0..40)
                 .position(|x| cell_char(&buf, x, 0) == '●')
@@ -334,7 +367,10 @@ mod tests {
             draw_progress(f, Rect::new(0, 0, 40, 1), 0.0, 0.0, &Palette::default());
         });
         let row: String = (0..40).map(|x| cell_char(&buf, x, 0)).collect();
-        assert!(row.contains("--:--"), "unknown duration should show as --:--");
+        assert!(
+            row.contains("--:--"),
+            "unknown duration should show as --:--"
+        );
     }
 
     #[test]
@@ -358,7 +394,14 @@ mod tests {
     fn braille_mode_uses_braille_glyphs() {
         let buf = render(2, 2, |f| {
             let area = Rect::new(0, 0, 2, 2);
-            draw_visualizer(f, area, &[1.0], &Palette::default(), VisualizerMode::Braille, 1);
+            draw_visualizer(
+                f,
+                area,
+                &[1.0],
+                &Palette::default(),
+                VisualizerMode::Braille,
+                1,
+            );
         });
         assert_eq!(cell_char(&buf, 0, 1), '⣿');
     }

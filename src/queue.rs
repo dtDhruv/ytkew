@@ -26,7 +26,6 @@ impl RepeatMode {
             RepeatMode::One => RepeatMode::Off,
         }
     }
-
 }
 
 #[derive(Default)]
@@ -115,9 +114,8 @@ impl Queue {
     /// The track that would play next, without advancing. Used both for
     /// prefetch and to decide whether to stop at the end of the queue.
     pub fn peek_next(&self) -> Option<&Track> {
-        self.next_pos().and_then(|p| {
-            self.order.get(p).and_then(|&i| self.tracks.get(i))
-        })
+        self.next_pos()
+            .and_then(|p| self.order.get(p).and_then(|&i| self.tracks.get(i)))
     }
 
     fn next_pos(&self) -> Option<usize> {

@@ -218,6 +218,23 @@ hide_help = false
 - Library browsing is playlists and liked songs; there's no artist/album tree
   yet.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). `cargo doc --open` renders the
+architecture notes in `src/lib.rs`; `src/run.rs` holds the event loop and is
+the place to start reading.
+
+```
+src/
+  run.rs        the event loop
+  app/          interface state: input, library, menu, graphics, media, search
+  ui/           rendering, one module per pane
+  art/          cover rendering: kitty, sixel, terminal probing, colour reduction
+  api.rs        YouTube Music, normalised into one Track type
+  player.rs     mpv over JSON IPC
+  config/       Config is yours and never written; State is what the app remembers
+```
+
 ## Licence
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

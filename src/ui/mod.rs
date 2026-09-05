@@ -1,5 +1,10 @@
 pub mod banner;
 pub mod bigtext;
+pub mod chrome;
+pub mod layout;
+pub mod lists;
+pub mod overlay;
+pub mod track;
 pub mod views;
 pub mod widgets;
 

@@ -15,8 +15,8 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
-use ytmapi_rs::common::{LikeStatus, TextRun, YoutubeID};
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, VideoID};
+use ytmapi_rs::common::{LikeStatus, TextRun, YoutubeID};
 use ytmapi_rs::YtMusic;
 
 const NEEDS_AUTH: &str =
@@ -198,9 +198,6 @@ impl Api {
         let res = any_auth!(self, |yt| yt.get_playlist_tracks(id.clone()).await)?;
         Ok(res.iter().filter_map(track_from_playlist_item).collect())
     }
-
-
-
 
     /// Songs you've liked in YouTube Music. This is the `LM` playlist, which
     /// is a different thing from `get_library_songs` (tracks explicitly added
@@ -436,4 +433,3 @@ mod tests {
         assert!(e.to_string().contains("no connection"), "got {e}");
     }
 }
-

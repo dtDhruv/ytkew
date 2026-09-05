@@ -1,0 +1,362 @@
+//! Turning key presses and mouse events into actions on the app.
+
+use crate::config::{Action, VisualizerMode};
+use crate::model::Track;
+use crate::queue::RepeatMode;
+use crate::ui::View;
+use anyhow::Result;
+
+use super::*;
+
+/// Regions the last frame drew, so a click can be resolved to the thing under
+/// it. Recorded during render because only the renderer knows the geometry.
+#[derive(Default)]
+pub struct HitRegions {
+    /// Tab label areas and the view each selects.
+    pub tabs: Vec<(ratatui::layout::Rect, View)>,
+    /// The scrollable list area, and the item index its first row shows.
+    pub list: Option<(ratatui::layout::Rect, usize)>,
+    /// Seekable progress bars: the whole bar including its time labels.
+    pub progress: Option<ratatui::layout::Rect>,
+    /// Where the bar's track actually starts and how wide it is, since the
+    /// labels either side are not seekable.
+    pub progress_track: Option<(u16, u16)>,
+}
+
+impl App {
+    /// Route a mouse event to whatever was drawn under the pointer.
+    pub async fn handle_mouse(&mut self, ev: crossterm::event::MouseEvent) -> Result<()> {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        let (col, row) = (ev.column, ev.row);
+
+        match ev.kind {
+            MouseEventKind::ScrollUp => {
+                // Scrolling over a list scrolls it; anywhere else nudges volume,
+                // which is what a media player's wheel usually does.
+                if self.point_in_list(col, row) {
+                    self.move_selection(-3);
+                } else {
+                    self.player.add_volume(self.cfg.volume_step).await?;
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                if self.point_in_list(col, row) {
+                    self.move_selection(3);
+                } else {
+                    self.player.add_volume(-self.cfg.volume_step).await?;
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(view) = self.tab_at(col, row) {
+                    self.set_view(view);
+                    if view == View::Library {
+                        self.ensure_library();
+                    }
+                    return Ok(());
+                }
+                if let Some(pct) = self.progress_at(col, row) {
+                    let d = self
+                        .player_state
+                        .duration
+                        .max(self.queue.current().and_then(|t| t.duration).unwrap_or(0.0));
+                    if d > 0.0 {
+                        self.player.seek_absolute(d * pct)?;
+                        self.announce_seek(d * pct);
+                    }
+                    return Ok(());
+                }
+                if let Some(index) = self.row_at(col, row) {
+                    // First click selects, a click on the current selection
+                    // activates -- the same feel as a file manager.
+                    let already = self.selection() == Some(index);
+                    self.set_selection(index);
+                    if already {
+                        self.activate_selection(false);
+                    }
+                }
+            }
+            MouseEventKind::Down(MouseButton::Right) => {
+                self.handle_action(Action::PlayPause).await?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    pub(crate) fn tab_at(&self, col: u16, row: u16) -> Option<View> {
+        self.hits
+            .tabs
+            .iter()
+            .find(|(r, _)| col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height)
+            .map(|(_, v)| *v)
+    }
+
+    pub(crate) fn point_in_list(&self, col: u16, row: u16) -> bool {
+        self.hits.list.is_some_and(|(r, _)| {
+            col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height
+        })
+    }
+
+    /// Item index under the pointer, if it is over a list row.
+    pub(crate) fn row_at(&self, col: u16, row: u16) -> Option<usize> {
+        let (r, start) = self.hits.list?;
+        if col < r.x || col >= r.x + r.width || row < r.y || row >= r.y + r.height {
+            return None;
+        }
+        let index = start + (row - r.y) as usize;
+        (index < self.list_len()).then_some(index)
+    }
+
+    /// Fraction along a progress bar that was clicked, if any.
+    pub(crate) fn progress_at(&self, col: u16, row: u16) -> Option<f64> {
+        let r = self.hits.progress?;
+        if row < r.y || row >= r.y + r.height {
+            return None;
+        }
+        let (track_x, track_w) = self.hits.progress_track?;
+        if track_w == 0 || col < track_x || col >= track_x + track_w {
+            return None;
+        }
+        Some((col - track_x) as f64 / track_w as f64)
+    }
+
+    pub(crate) fn selection(&self) -> Option<usize> {
+        match self.view {
+            View::Queue => Some(self.queue_sel),
+            View::Library => Some(self.library_sel),
+            View::Search => Some(self.search_sel),
+            _ => None,
+        }
+    }
+
+    // --- selection --------------------------------------------------------
+
+    pub(crate) fn list_len(&self) -> usize {
+        match self.view {
+            View::Queue => self.queue.len(),
+            View::Library => self.library_rows.len(),
+            View::Search => self.search_results.len(),
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn move_selection(&mut self, delta: isize) {
+        if self.view == View::Lyrics {
+            self.lyrics_scroll = self.lyrics_scroll.saturating_add_signed(delta as i16);
+            return;
+        }
+        let len = self.list_len();
+        if len == 0 {
+            return;
+        }
+        if let Some(sel) = self.selection_mut() {
+            let next = (*sel as isize + delta).clamp(0, len as isize - 1);
+            *sel = next as usize;
+        }
+    }
+
+    pub(crate) fn set_selection(&mut self, to: usize) {
+        let len = self.list_len();
+        if len == 0 {
+            return;
+        }
+        if let Some(sel) = self.selection_mut() {
+            *sel = to.min(len - 1);
+        }
+    }
+
+    /// Enter appends to the queue without interrupting playback; alt+enter
+    /// (`jump`) appends and switches to it at once. That is kew's split
+    /// between MSG_ENQUEUE and MSG_ENQUEUEANDPLAY.
+    pub(crate) fn activate_selection(&mut self, jump: bool) {
+        match self.view {
+            View::Queue => {
+                if self.queue_sel < self.queue.len() {
+                    let i = self.queue_sel;
+                    if self.queue.jump_to(i).is_some() {
+                        self.start_current();
+                    }
+                }
+            }
+            View::Search => {
+                if let Some(track) = self.search_results.get(self.search_sel).cloned() {
+                    self.enqueue_track(track, jump);
+                }
+            }
+            View::Library => self.activate_library_row(jump),
+            _ => {}
+        }
+    }
+
+    /// Append one track. Starts playback if nothing is going, so a first
+    /// Enter on a fresh queue still does the obvious thing.
+    pub(crate) fn enqueue_track(&mut self, track: Track, jump: bool) {
+        let was_idle = self.queue.current().is_none();
+        let title = track.title.clone();
+        let seed = track.video_id.clone();
+        self.queue.push(track);
+        let last = self.queue.len() - 1;
+
+        if was_idle || jump {
+            if self.queue.jump_to(last).is_some() {
+                self.start_current();
+            }
+            if self.cfg.autoplay_radio && was_idle {
+                self.append_radio(&seed);
+            }
+        } else {
+            // Only the upcoming entry changed; re-prime mpv's prefetch.
+            self.resync_prefetch();
+            self.notify(format!("queued {title}"));
+        }
+    }
+
+    pub(crate) fn remove_selection(&mut self) {
+        if self.view == View::Queue && self.queue_sel < self.queue.len() {
+            self.queue.remove(self.queue_sel);
+            if self.queue_sel >= self.queue.len() {
+                self.queue_sel = self.queue.len().saturating_sub(1);
+            }
+            self.resync_prefetch();
+        }
+    }
+
+    pub async fn handle_action(&mut self, action: Action) -> Result<()> {
+        match self.handle_menu_action(action) {
+            MenuOutcome::Consumed => return Ok(()),
+            MenuOutcome::Fallthrough => {}
+        }
+        match action {
+            Action::Quit => self.should_quit = true,
+            Action::PlayPause => {
+                if self.queue.current().is_none() {
+                    self.notify("nothing queued");
+                } else {
+                    self.player.toggle_pause().await?;
+                }
+            }
+            Action::Stop => {
+                let _ = self.player.stop();
+            }
+            Action::Next => self.next_track().await,
+            Action::Prev => self.prev_track(),
+            Action::SeekForward => {
+                self.player.seek(self.cfg.seek_step)?;
+                self.announce_seek(self.player_state.time_pos + self.cfg.seek_step);
+            }
+            Action::SeekBack => {
+                self.player.seek(-self.cfg.seek_step)?;
+                self.announce_seek(self.player_state.time_pos - self.cfg.seek_step);
+            }
+            Action::VolumeUp => {
+                self.player.add_volume(self.cfg.volume_step).await?;
+            }
+            Action::VolumeDown => {
+                self.player.add_volume(-self.cfg.volume_step).await?;
+            }
+            Action::Shuffle => {
+                let on = self.queue.toggle_shuffle();
+                // The upcoming track changed, so re-prime mpv's prefetch.
+                self.resync_prefetch();
+                self.notify(if on { "shuffle on" } else { "shuffle off" });
+            }
+            Action::ToggleRepeat => {
+                self.queue.repeat = self.queue.repeat.cycle();
+                // Repeat-one is cheapest handled inside mpv.
+                let _ = self
+                    .player
+                    .set_loop_file(self.queue.repeat == RepeatMode::One);
+                self.resync_prefetch();
+                self.notify(match self.queue.repeat {
+                    RepeatMode::Off => "repeat off",
+                    RepeatMode::All => "repeat all",
+                    RepeatMode::One => "repeat one",
+                });
+            }
+            Action::CycleVisualizer => {
+                self.cfg.visualizer_mode = self.cfg.visualizer_mode.cycle();
+                if !self.visual.available && self.cfg.visualizer_mode != VisualizerMode::Off {
+                    self.notify("no audio capture available for the visualizer");
+                }
+            }
+            Action::ToggleAscii => {
+                // Just show or hide. Which renderer to use is a setting, not
+                // something to cycle past on the way to turning art off.
+                self.clear_cover_art();
+                self.cover_visible = !self.cover_visible;
+                self.notify(if self.cover_visible {
+                    format!("cover on ({})", self.cfg.cover_mode.name())
+                } else {
+                    "cover off".into()
+                });
+            }
+            Action::NextView => self.set_view(self.view.next()),
+            Action::PrevView => self.set_view(self.view.prev()),
+            Action::ShowQueue => self.set_view(View::Queue),
+            Action::ShowTrack => self.set_view(View::Track),
+            Action::ShowHelp => self.set_view(View::Help),
+            Action::ShowLibrary => {
+                self.set_view(View::Library);
+                self.ensure_library();
+            }
+            Action::ShowSearch => {
+                self.set_view(View::Search);
+                self.search_editing = true;
+            }
+            Action::ShowLyrics => {
+                self.set_view(View::Lyrics);
+                self.ensure_lyrics();
+            }
+            Action::ScrollUp => self.move_selection(-1),
+            Action::ScrollDown => self.move_selection(1),
+            Action::PageUp => self.move_selection(-10),
+            Action::PageDown => self.move_selection(10),
+            Action::Top => self.set_selection(0),
+            Action::Bottom => self.set_selection(usize::MAX),
+            Action::Enqueue => self.activate_selection(false),
+            Action::EnqueueAndPlay => self.activate_selection(true),
+            Action::Remove => self.remove_selection(),
+            Action::ClearQueue => {
+                self.queue.clear();
+                let _ = self.player.stop();
+                let _ = self.player.clear_playlist();
+                self.cover = None;
+                self.notify("queue cleared");
+            }
+            Action::MoveUp => {
+                if self.view == View::Queue {
+                    if let Some(n) = self.queue.move_up(self.queue_sel) {
+                        self.queue_sel = n;
+                        self.resync_prefetch();
+                    }
+                }
+            }
+            Action::MoveDown => {
+                if self.view == View::Queue {
+                    if let Some(n) = self.queue.move_down(self.queue_sel) {
+                        self.queue_sel = n;
+                        self.resync_prefetch();
+                    }
+                }
+            }
+            Action::ToggleLike => self.like_current(),
+            Action::StartRadio => self.radio_from_current(),
+            Action::PlayAll => self.play_all_in_context(),
+            Action::ToggleMenu => {
+                // Help and lyrics are overlays in their own right; escape
+                // dismisses them rather than opening the menu over the top.
+                if matches!(self.view, View::Help | View::Lyrics) {
+                    let back = self.prev_view;
+                    self.set_view(back);
+                } else {
+                    self.menu_open = !self.menu_open;
+                    self.menu_sel = 0;
+                    self.menu_screen = MenuScreen::Main;
+                }
+            }
+            Action::CoverSmaller => self.nudge_cover(-2),
+            Action::CoverBigger => self.nudge_cover(2),
+        }
+        Ok(())
+    }
+}

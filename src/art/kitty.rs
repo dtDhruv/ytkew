@@ -36,12 +36,12 @@ fn to_png(img: &RgbImage) -> Option<Vec<u8>> {
         .step_by(3)
         .map(|p| [p[0], p[1], p[2]])
         .collect();
-    let palette = crate::sixel::median_cut(&mut samples, 256);
-    let lut = crate::sixel::build_lut(&palette);
+    let palette = super::quantize::median_cut(&mut samples, 256);
+    let lut = super::quantize::build_lut(&palette);
 
     let indices: Vec<u8> = img
         .pixels()
-        .map(|p| lut[crate::sixel::lut_index(&[p[0], p[1], p[2]])])
+        .map(|p| lut[super::quantize::lut_index(&[p[0], p[1], p[2]])])
         .collect();
 
     let mut flat = Vec::with_capacity(palette.len() * 3);
@@ -123,10 +123,10 @@ pub fn query_kitty_support() -> bool {
     use base64::Engine;
     use std::io::Write;
 
-    let Some(mut tty) = crate::sixel::open_tty() else {
+    let Some(mut tty) = super::terminal::open_tty() else {
         return false;
     };
-    let Some(raw) = crate::sixel::RawMode::enable(&tty) else {
+    let Some(raw) = super::terminal::RawMode::enable(&tty) else {
         return false;
     };
 
@@ -138,7 +138,7 @@ pub fn query_kitty_support() -> bool {
             return false;
         }
         // The reply is an APC ending in ESC backslash; read to the backslash.
-        match crate::sixel::read_reply(&mut tty, b'\\', 250) {
+        match super::terminal::read_reply(&mut tty, b'\\', 250) {
             Some(reply) => {
                 let text = String::from_utf8_lossy(&reply);
                 text.contains("_G") && text.contains("OK")
@@ -160,7 +160,7 @@ pub fn terminal_supports_kitty() -> bool {
     // Inside a multiplexer the query can be answered by the *host* terminal
     // while the multiplexer itself mangles or drops the image, so the version
     // gate has to pass first. zellij only gained support in 0.45.0.
-    if let Some(mux) = crate::sixel::multiplexer() {
+    if let Some(mux) = super::terminal::multiplexer() {
         if mux != "zellij" || !zellij_version().is_some_and(|v| v >= (0, 45, 0)) {
             return false;
         }
@@ -181,15 +181,19 @@ fn zellij_version() -> Option<(u32, u32, u32)> {
 
 fn parse_semver(text: &str) -> Option<(u32, u32, u32)> {
     // e.g. "zellij 0.43.1"
-    let token = text.split_whitespace().find(|t| {
-        t.chars().next().is_some_and(|c| c.is_ascii_digit()) && t.contains('.')
-    })?;
+    let token = text
+        .split_whitespace()
+        .find(|t| t.chars().next().is_some_and(|c| c.is_ascii_digit()) && t.contains('.'))?;
     let mut parts = token.trim().split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
     let patch = parts
         .next()
-        .and_then(|p| p.trim_end_matches(|c: char| !c.is_ascii_digit()).parse().ok())
+        .and_then(|p| {
+            p.trim_end_matches(|c: char| !c.is_ascii_digit())
+                .parse()
+                .ok()
+        })
         .unwrap_or(0);
     Some((major, minor, patch))
 }

@@ -67,10 +67,7 @@ pub fn rows() -> [String; ROWS] {
 
 /// Display width of the wordmark.
 pub fn width() -> usize {
-    LETTERS
-        .iter()
-        .map(|l| l[0].chars().count())
-        .sum()
+    LETTERS.iter().map(|l| l[0].chars().count()).sum()
 }
 
 /// btop's own ramp, verbatim from `Global::Banner_src`. The logo keeps this
@@ -130,7 +127,10 @@ mod tests {
                 "row {i} is brighter than the one above it"
             );
         }
-        assert!(lum(s[0]) > lum(s[ROWS - 1]), "top should outshine the shadow");
+        assert!(
+            lum(s[0]) > lum(s[ROWS - 1]),
+            "top should outshine the shadow"
+        );
     }
 
     #[test]
@@ -148,6 +148,9 @@ mod tests {
         // the small font again.
         let joined = rows().join("");
         assert!(joined.contains('█'), "expected solid blocks");
-        assert!(joined.contains('╗') && joined.contains('╝'), "expected shadowing");
+        assert!(
+            joined.contains('╗') && joined.contains('╝'),
+            "expected shadowing"
+        );
     }
 }
