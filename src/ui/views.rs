@@ -51,7 +51,7 @@ pub fn track_layout(area: Rect, app: &App) -> TrackLayout {
     } else {
         app.cfg.visualizer_height
     };
-    let draws_cover = app.cfg.cover_mode.draws_anything() && app.cfg.cover_enabled;
+    let draws_cover = app.cover_visible && app.cfg.cover_mode.draws_anything();
     compute_track_layout(area, app.cell_px, viz_h, draws_cover)
 }
 

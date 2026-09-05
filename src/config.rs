@@ -79,13 +79,25 @@ impl CoverMode {
     /// terminal's report, the tty window size and a cursor-advance probe all
     /// disagree with what actually gets drawn under a multiplexer. Blocks are
     /// always correctly sized, so they are the safe default.
+    /// Step to the next renderer. `Off` is deliberately not in the cycle:
+    /// showing or hiding the art is a separate toggle, so this only ever
+    /// chooses *how* it is drawn.
     pub fn cycle(self) -> Self {
         match self {
             CoverMode::Auto => CoverMode::Kitty,
             CoverMode::Kitty => CoverMode::Sixel,
             CoverMode::Sixel => CoverMode::Blocks,
-            CoverMode::Blocks => CoverMode::Off,
-            CoverMode::Off => CoverMode::Auto,
+            CoverMode::Blocks | CoverMode::Off => CoverMode::Auto,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            CoverMode::Auto => "auto",
+            CoverMode::Kitty => "kitty",
+            CoverMode::Sixel => "sixel",
+            CoverMode::Blocks => "blocks",
+            CoverMode::Off => "off",
         }
     }
 
@@ -139,7 +151,8 @@ pub struct Config {
     pub visualizer_height: u16,
     pub visualizer_bar_width: u16,
     pub visualizer_mode: VisualizerMode,
-    /// Draw album art at all. Kept for older configs; `cover_mode` wins.
+    /// Whether art is shown on a first run, before any state is saved.
+    /// `b` toggles it thereafter.
     pub cover_enabled: bool,
     pub cover_mode: CoverMode,
     /// Terminal cell size in pixels, as `[width, height]`. Leave at [0, 0] to
@@ -218,11 +231,14 @@ visualizer_height = 6
 visualizer_bar_width = 2
 visualizer_mode = "bars"      # bars | braille | off
 
-cover_mode = "auto"           # auto | kitty | sixel | blocks | off
-                              # auto prefers the kitty graphics protocol,
-                              # which sizes placements in cells and so needs
-                              # no cell_px at all. Falls back to sixel (needs
-                              # an accurate cell_px) then half-blocks.
+cover_mode = "auto"           # which renderer to use for album art:
+                              #   auto   - kitty if available, else blocks
+                              #   kitty  - kitty graphics protocol
+                              #   sixel  - sixel (needs an accurate cell_px)
+                              #   blocks - truecolor half-blocks, works anywhere
+                              # `b` shows and hides the art; it does not
+                              # change the renderer. Cycle renderers from the
+                              # escape menu.
 cell_px = [0, 0]              # cell size in px for sixel. [0,0] = unset.
                               # Easiest way to set it: run ytkew, press `b`
                               # until you see sixel, then `[` and `]` to
@@ -250,6 +266,8 @@ pub struct State {
     pub repeat: String,
     /// Cell size the user tuned by eye with `[`/`]`. Treated as pinned.
     pub cover_cell: [u16; 2],
+    /// Whether album art is showing. Toggled with `b` and remembered.
+    pub cover_visible: bool,
 }
 
 impl Default for State {
@@ -259,6 +277,7 @@ impl Default for State {
             shuffle: false,
             repeat: "off".into(),
             cover_cell: [0, 0],
+            cover_visible: true,
         }
     }
 }
@@ -457,6 +476,33 @@ mod tests {
     }
 
     #[test]
+    fn the_renderer_cycle_never_lands_on_off() {
+        // `b` shows and hides the art, so the renderer cycle must only ever
+        // choose *how* to draw it -- otherwise one key does two jobs again.
+        let mut m = CoverMode::Auto;
+        for _ in 0..8 {
+            m = m.cycle();
+            assert_ne!(m, CoverMode::Off, "off is not a renderer");
+        }
+        // And it visits every real renderer exactly once before repeating.
+        let mut seen = Vec::new();
+        let mut m = CoverMode::Auto;
+        for _ in 0..4 {
+            assert!(!seen.contains(&m), "revisited {m:?} too early");
+            seen.push(m);
+            m = m.cycle();
+        }
+        assert_eq!(seen.len(), 4);
+        assert_eq!(m, CoverMode::Auto, "should return to where it started");
+    }
+
+    #[test]
+    fn a_config_set_to_off_recovers_into_the_cycle() {
+        // Older configs may still say "off"; cycling must not strand there.
+        assert_eq!(CoverMode::Off.cycle(), CoverMode::Auto);
+    }
+
+    #[test]
     fn escape_opens_the_menu_and_q_quits() {
         // btop's convention: escape is the menu, not an exit.
         let km = Keymap::default();
@@ -554,6 +600,7 @@ mod tests {
             shuffle: true,
             repeat: "all".into(),
             cover_cell: [12, 24],
+            cover_visible: false,
         };
         saved.save(&dir).unwrap();
         let back = State::load(&dir, &cfg);
@@ -561,6 +608,7 @@ mod tests {
         assert!(back.shuffle);
         assert_eq!(back.repeat, "all");
         assert_eq!(back.cover_cell, [12, 24], "tuned cell size must persist");
+        assert!(!back.cover_visible, "the b toggle must persist");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

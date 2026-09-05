@@ -42,8 +42,10 @@ already buffered.
 3. **Truecolor half-blocks**, drawn into ratatui's own buffer. Always
    correctly sized, works anywhere, just softer.
 
-`b` cycles auto -> kitty -> sixel -> blocks -> off at runtime, and `[` / `]`
-resize sixel art by eye if its scale is off.
+`b` shows and hides the art. *Which* renderer is used is a setting, not
+something to cycle past on the way to turning it off -- set `cover_mode` in
+the config, or pick it from the `esc` menu, which shows the current choice.
+`[` / `]` resize sixel art by eye if its scale is off.
 
 Support is confirmed by the protocol'"'"'s own capability query rather than
 guessed from `TERM_PROGRAM`: a wrong guess would dump kilobytes of base64
@@ -144,7 +146,7 @@ kew's bindings, unchanged where they made sense.
 | `s` | shuffle |
 | `r` | repeat (off → all → one) |
 | `v` | cycle visualizer (bars → braille → off) |
-| `b` | toggle cover art |
+| `b` | show / hide album art |
 | `.` | like current track |
 | `R` | start radio from current track |
 | `enter` | add to queue (plays if idle) |

@@ -110,6 +110,7 @@ pub struct HitRegions {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuItem {
     PlayAll,
+    Renderer,
     Shuffle,
     Repeat,
     ClearQueue,
@@ -127,8 +128,9 @@ enum MenuOutcome {
     Run(Action),
 }
 
-pub const MENU_ITEMS: [MenuItem; 6] = [
+pub const MENU_ITEMS: [MenuItem; 7] = [
     MenuItem::PlayAll,
+    MenuItem::Renderer,
     MenuItem::Shuffle,
     MenuItem::Repeat,
     MenuItem::ClearQueue,
@@ -253,6 +255,10 @@ pub struct App {
     /// Clickable regions from the last frame.
     pub hits: HitRegions,
 
+    /// Whether album art is showing. `b` toggles this; the renderer is a
+    /// separate setting, so one key does one thing.
+    pub cover_visible: bool,
+
     /// btop-style overlay menu: escape opens it, q still quits outright.
     pub menu_open: bool,
     pub menu_sel: usize,
@@ -296,6 +302,9 @@ impl App {
             };
         }
         let cfg_accent = cfg.accent_color;
+        // First run falls back to the config's default; after that the
+        // remembered toggle wins.
+        let state_cover_visible = state.cover_visible && cfg.cover_enabled;
         // Resolve the cell size before the TUI starts, since the CSI query
         // needs a quiet terminal.
         let (cfg_cell_px, cell_source) = crate::sixel::detect_cell_size(match cfg.cell_px {
@@ -339,6 +348,7 @@ impl App {
             cell_source,
             mpris: None,
             hits: HitRegions::default(),
+            cover_visible: state_cover_visible,
             menu_open: false,
             menu_sel: 0,
             pending_play: None,
@@ -348,6 +358,23 @@ impl App {
             mpv_pos: 0,
             tx,
         }
+    }
+
+    /// Step to the next art renderer, leaving visibility alone.
+    pub fn cycle_renderer(&mut self) {
+        self.invalidate_sixel();
+        self.cfg.cover_mode = self.cfg.cover_mode.cycle();
+        self.graphics = Graphics::resolve(&self.cfg, self.cell_source);
+        let mut msg = format!("cover renderer: {}", self.cfg.cover_mode.name());
+        if self.graphics == Graphics::Sixel && !self.cell_source.is_trustworthy() {
+            let (w, h) = self.cell_px;
+            msg.push_str(&format!(" (cell size guessed {w}x{h}; [ / ] to resize)"));
+        } else if self.cfg.cover_mode == crate::config::CoverMode::Kitty
+            && self.graphics != Graphics::Kitty
+        {
+            msg.push_str(" (this terminal did not answer the kitty query)");
+        }
+        self.notify(msg);
     }
 
     /// Adjust the assumed cell height by `delta` px, deriving the width from
@@ -413,7 +440,7 @@ impl App {
     /// True when the cover is drawn by a graphics protocol rather than into
     /// ratatui's buffer. Requires a loaded image -- there is no placeholder.
     pub fn graphics_active(&self) -> bool {
-        self.graphics != Graphics::None && self.cover.is_some()
+        self.cover_visible && self.graphics != Graphics::None && self.cover.is_some()
     }
 
 
@@ -730,6 +757,7 @@ impl App {
             } else {
                 [0, 0]
             },
+            cover_visible: self.cover_visible,
             shuffle: self.queue.shuffle,
             repeat: match self.queue.repeat {
                 RepeatMode::All => "all".into(),
@@ -983,6 +1011,11 @@ impl App {
                 View::Search => "Play all results".into(),
                 _ => "Play queue from start".into(),
             },
+            MenuItem::Renderer => format!(
+                "Cover: {} ({})",
+                self.cfg.cover_mode.name(),
+                if self.cover_visible { "shown" } else { "hidden" }
+            ),
             MenuItem::Shuffle => {
                 format!("Shuffle: {}", if self.queue.shuffle { "on" } else { "off" })
             }
@@ -1025,6 +1058,7 @@ impl App {
                 // the normal dispatcher rather than recursing into it.
                 match item {
                     MenuItem::PlayAll => self.play_all_in_context(),
+                    MenuItem::Renderer => self.cycle_renderer(),
                     MenuItem::Shuffle => return MenuOutcome::Run(Action::Shuffle),
                     MenuItem::Repeat => return MenuOutcome::Run(Action::ToggleRepeat),
                     MenuItem::ClearQueue => return MenuOutcome::Run(Action::ClearQueue),
@@ -1175,18 +1209,15 @@ impl App {
                 }
             }
             Action::ToggleAscii => {
-                // Cycles the renderer, so whatever is drawn now has to go.
+                // Just show or hide. Which renderer to use is a setting, not
+                // something to cycle past on the way to turning art off.
                 self.invalidate_sixel();
-                self.cfg.cover_mode = self.cfg.cover_mode.cycle();
-                self.graphics = Graphics::resolve(&self.cfg, self.cell_source);
-                let mut msg = format!("cover: {:?}", self.cfg.cover_mode).to_lowercase();
-                if self.graphics == Graphics::Sixel && !self.cell_source.is_trustworthy() {
-                    let (w, h) = self.cell_px;
-                    msg.push_str(&format!(
-                        " (cell size guessed {w}x{h}; use [ / ] to resize)"
-                    ));
-                }
-                self.notify(msg);
+                self.cover_visible = !self.cover_visible;
+                self.notify(if self.cover_visible {
+                    format!("cover on ({})", self.cfg.cover_mode.name())
+                } else {
+                    "cover off".into()
+                });
             }
             Action::NextView => self.set_view(self.view.next()),
             Action::PrevView => self.set_view(self.view.prev()),
