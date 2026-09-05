@@ -12,6 +12,41 @@ pub use state::State;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// What to show beside the now-playing column when there is room.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SidePane {
+    /// One centred column, as kew does it.
+    Off,
+    /// What is coming up in the queue.
+    #[default]
+    Queue,
+    /// The library tree.
+    Library,
+}
+
+impl SidePane {
+    pub fn name(self) -> &'static str {
+        match self {
+            SidePane::Off => "off",
+            SidePane::Queue => "queue",
+            SidePane::Library => "library",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Self {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "off" => SidePane::Off,
+            "library" => SidePane::Library,
+            _ => SidePane::Queue,
+        }
+    }
+
+    pub fn shows_anything(self) -> bool {
+        self != SidePane::Off
+    }
+}
+
 /// How album art is drawn.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -105,6 +140,7 @@ pub struct Config {
     pub hide_help: bool,
     /// Volume used on a first run, before any state has been saved.
     pub keys: crate::config::keymap::KeyPreset,
+    pub side_pane: SidePane,
     pub initial_volume: f64,
     pub volume_max: f64,
     pub volume_step: f64,
@@ -137,6 +173,7 @@ impl Default for Config {
             cell_px: [0, 0],
             hide_help: false,
             keys: crate::config::keymap::KeyPreset::Kew,
+            side_pane: SidePane::Queue,
             initial_volume: 100.0,
             volume_max: 100.0,
             volume_step: 5.0,
@@ -199,13 +236,16 @@ cell_px = [0, 0]              # cell size in px for sixel. [0,0] = unset.
                               # Easiest way to set it: run ytkew, press `b`
                               # until you see sixel, then `[` and `]` to
                               # resize until it fits. It saves automatically.
+side_pane = "queue"           # off | queue | library -- what to show beside
+                              # the now-playing column on a wide terminal
 cover_enabled = true
 
 # Colours. "cover" takes them from the album art, which is the default and
 # what kew does. Or pick a built-in:
 #   gruvbox  nord  dracula  catppuccin  tokyonight
 #   everforest  rosepine  solarized  matrix  mono
-# `t` cycles at runtime and remembers your choice.
+# Add your own by dropping a .toml file in themes/ -- see themes/README.txt.
+# esc -> options -> theme switches at runtime and remembers your choice.
 theme = "cover"
 
 # With theme = "custom", these three are borders, secondary text, accent.

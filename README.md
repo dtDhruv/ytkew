@@ -180,6 +180,62 @@ kew's bindings, unchanged where they made sense.
 `/` also opens search. In the search box, `enter` searches, `esc` leaves
 editing, and autocomplete appears as you type.
 
+### vim bindings
+
+Set `keys = "vim"`, or pick it from `esc` → options → key bindings. The
+transport keys stay put; navigation becomes what your fingers already know.
+
+| | |
+|---|---|
+| `j` `k` | move selection |
+| `gg` `G` | top / bottom |
+| `ctrl+d` `ctrl+u` | half page |
+| `ctrl+f` `ctrl+b` | full page |
+| `H` `L` | previous / next track (`h`/`l` are motions) |
+| `w` `b` | seek forward / back |
+| `J` `K` | move track down / up in queue |
+| `x` `dd` | remove from queue |
+| `o` | add and jump to it |
+| `c` | show / hide album art |
+
+Everything not listed is unchanged. The footer hints follow whichever preset
+is active, so the line on screen is always the truth.
+
+## Layout
+
+On a terminal wide enough for it (88 columns), the track view splits: the
+cover, metadata, visualizer and progress bar keep a column on the left, and
+the space that would otherwise sit empty becomes a list. This is the shape
+cmus and spotify-tui use — the browser beside the player, not under it.
+
+```toml
+side_pane = "queue"           # off | queue | library
+```
+
+`j`/`k` and `enter` act on the side pane while it is showing, since the
+player column has nothing to select. Below 88 columns it collapses back to
+kew's single centred column on its own.
+
+## Themes
+
+Ten built in, listed in the config. Drop a TOML file in
+`~/.config/ytkew/themes/` to add your own:
+
+```toml
+# ~/.config/ytkew/themes/ayu.toml
+dark   = "#3d4751"   # borders and inactive chrome
+mid    = "#b3b1ad"   # secondary text
+bright = "#ffcc66"   # accents, titles, the progress bar
+```
+
+The file name is the theme name, and it appears in `esc` → options → theme
+alongside the built-ins. Reusing a built-in name replaces it, so you can
+retune a shipped theme without patching ytkew. `cover` is reserved: it means
+"take the colours from the album art", which is the default.
+
+Themes are read at startup. A file that does not parse is reported and
+skipped; the rest still load.
+
 ## Configuration
 
 Two files in `~/.config/ytkew/`:
@@ -194,13 +250,16 @@ visualizer_height = 6
 visualizer_bar_width = 2
 visualizer_mode = "bars"      # bars | braille | off
 
-cover_mode = "auto"           # auto | sixel | blocks | off
+cover_mode = "auto"           # auto | kitty | sixel | blocks | off
 cell_px = [0, 0]              # cell size in px; [0,0] autodetects
+side_pane = "queue"           # off | queue | library
 cover_enabled = true
-color_from_cover = true       # derive the theme from album art
-accent_color = 6              # ANSI index, used when color_from_cover = false
+theme = "cover"               # "cover", a built-in, or one of your own
+accent_color = 6              # ANSI index, used only as a last resort
 
+keys = "kew"                  # kew | vim
 initial_volume = 100.0        # only applies before state.toml exists
+volume_max = 100.0            # up to 130 to allow boosting; see below
 volume_step = 5.0
 seek_step = 5.0
 
@@ -209,14 +268,20 @@ save_repeat_shuffle = false   # remember shuffle/repeat across restarts
 hide_help = false
 ```
 
+Volume is capped at 100% by default. mpv can go to 130, but above 100 it is
+plain digital gain with nothing to catch the peaks, so anything mastered near
+full scale clips and turns fuzzy. Raise `volume_max` if you want the headroom
+for quiet recordings.
+
 ## Known limits
 
 - Unofficial API: YouTube can change it at any time. Bump `ytmapi-rs` first.
 - The visualizer captures the whole audio sink, not just ytkew, so other
   applications' sound shows up in the bars. This is how `cava` behaves too.
 - Non-Premium accounts may get lower-bitrate streams.
-- Library browsing is playlists and liked songs; there's no artist/album tree
-  yet.
+- Paged fetches stop at 5,000 items, so a playlist longer than that is
+  truncated. The cap exists so a continuation token that keeps pointing at
+  more results cannot spin forever.
 
 ## Contributing
 

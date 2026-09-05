@@ -131,8 +131,23 @@ impl App {
 
     // --- selection --------------------------------------------------------
 
+    /// The pane the selection keys act on.
+    ///
+    /// On the track view that is the side pane when one is showing: the
+    /// player column has nothing to select, so j/k and enter would otherwise
+    /// do nothing at all on the view most people leave open.
+    pub(crate) fn active_list(&self) -> View {
+        if self.view == View::Track && self.side_pane_open {
+            return match self.cfg.side_pane {
+                crate::config::SidePane::Library => View::Library,
+                _ => View::Queue,
+            };
+        }
+        self.view
+    }
+
     pub(crate) fn list_len(&self) -> usize {
-        match self.view {
+        match self.active_list() {
             View::Queue => self.queue.len(),
             View::Library => self.library_rows.len(),
             View::Search => self.search_results.len(),
@@ -169,7 +184,7 @@ impl App {
     /// (`jump`) appends and switches to it at once. That is kew's split
     /// between MSG_ENQUEUE and MSG_ENQUEUEANDPLAY.
     pub(crate) fn activate_selection(&mut self, jump: bool) {
-        match self.view {
+        match self.active_list() {
             View::Queue => {
                 if self.queue_sel < self.queue.len() {
                     let i = self.queue_sel;

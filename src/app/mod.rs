@@ -142,6 +142,9 @@ pub struct App {
 
     /// btop-style overlay menu: escape opens it, q still quits outright.
     pub menu_open: bool,
+    /// Whether the track view is currently showing a side pane. Set by the
+    /// renderer, since only it knows the terminal is wide enough for one.
+    pub side_pane_open: bool,
     /// First key of a two-key sequence, waiting on the second.
     pub pending_key: Option<char>,
     pub menu_sel: usize,
@@ -252,6 +255,7 @@ impl App {
             theme: active_theme,
             themes,
             menu_open: false,
+            side_pane_open: false,
             pending_key: None,
             menu_sel: 0,
             menu_screen: MenuScreen::Main,
@@ -577,7 +581,7 @@ impl App {
     }
 
     fn selection_mut(&mut self) -> Option<&mut usize> {
-        match self.view {
+        match self.active_list() {
             View::Queue => Some(&mut self.queue_sel),
             View::Library => Some(&mut self.library_sel),
             View::Search => Some(&mut self.search_sel),

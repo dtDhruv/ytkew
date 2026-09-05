@@ -243,8 +243,10 @@ fn hint_key(app: &App, action: Action, fallback: &str) -> String {
     if keys.is_empty() {
         return fallback.to_string();
     }
-    // One or two is a hint; the full list is what the help view is for.
-    keys.into_iter().take(2).collect::<Vec<_>>().join("/")
+    // One key is a hint; the full list is what the help view is for.
+    keys.into_iter()
+        .next()
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 /// A pair of opposed actions as one `x/y` hint.

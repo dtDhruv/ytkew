@@ -37,6 +37,7 @@ pub enum MenuScreen {
 pub enum Setting {
     Theme,
     Keys,
+    SidePane,
     Renderer,
     ShowCover,
     Visualizer,
@@ -45,9 +46,10 @@ pub enum Setting {
     AutoplayRadio,
 }
 
-pub const SETTINGS: [Setting; 8] = [
+pub const SETTINGS: [Setting; 9] = [
     Setting::Theme,
     Setting::Keys,
+    Setting::SidePane,
     Setting::Renderer,
     Setting::ShowCover,
     Setting::Visualizer,
@@ -61,6 +63,7 @@ impl Setting {
         match self {
             Setting::Theme => "Theme",
             Setting::Keys => "Key bindings",
+            Setting::SidePane => "Side pane",
             Setting::Renderer => "Cover renderer",
             Setting::ShowCover => "Show cover art",
             Setting::Visualizer => "Visualizer",
@@ -77,6 +80,9 @@ impl Setting {
             }
             Setting::Keys => {
                 "kew keeps kew's keys. vim swaps in vim motions: gg, G, ctrl+d/u, dd, x, J/K to reorder, H/L for previous and next track."
+            }
+            Setting::SidePane => {
+                "What sits beside the now-playing column on a wide terminal. j/k and enter act on it."
             }
             Setting::Renderer => {
                 "How album art is drawn. Kitty sizes in cells and needs no tuning; sixel needs an accurate cell size; blocks work anywhere."
@@ -124,6 +130,7 @@ impl App {
                 (names, i)
             }
             Setting::Keys => pick(&["kew", "vim"], self.cfg.keys.name()),
+            Setting::SidePane => pick(&["off", "queue", "library"], self.cfg.side_pane.name()),
             Setting::Renderer => pick(
                 &["auto", "kitty", "sixel", "blocks"],
                 self.cfg.cover_mode.name(),
@@ -189,6 +196,11 @@ impl App {
                 self.keymap = crate::config::Keymap::for_preset(self.cfg.keys);
                 // A half-typed sequence makes no sense under the new table.
                 self.pending_key = None;
+            }
+            Setting::SidePane => {
+                // The player column changes width, so the art must be redrawn.
+                self.clear_cover_art();
+                self.cfg.side_pane = crate::config::SidePane::from_name(value);
             }
             Setting::Renderer => {
                 self.clear_cover_art();

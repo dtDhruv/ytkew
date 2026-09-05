@@ -9,12 +9,24 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::Frame;
 
 use super::layout::*;
+use super::lists::{draw_library, draw_up_next};
 use super::views::reserve_cells;
 use super::views::{centered_row, panel};
 
 /// kew's portrait track layout: cover, gap, metadata, time, lyric, then the
 /// visualizer with the progress bar beneath it.
 pub(super) fn draw_track(f: &mut Frame, area: Rect, app: &mut App) {
+    let (player, side) = track_panes(area, app);
+    // Input needs to know whether there is a side pane to steer the selection
+    // keys at; the renderer is what knows the terminal is wide enough.
+    app.side_pane_open = side.is_some();
+    if let Some(side) = side {
+        match app.cfg.side_pane {
+            crate::config::SidePane::Library => draw_library(f, side, app),
+            _ => draw_up_next(f, side, app),
+        }
+    }
+
     let (pos, total) = app.queue.human_position();
     let title = if app.player_state.paused && app.queue.current().is_some() {
         "paused"
@@ -25,7 +37,7 @@ pub(super) fn draw_track(f: &mut Frame, area: Rect, app: &mut App) {
     };
     let area = panel(
         f,
-        area,
+        player,
         title,
         (total > 0).then_some((pos.saturating_sub(1), total)),
         app,

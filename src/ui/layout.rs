@@ -142,9 +142,60 @@ pub fn track_inner(area: Rect) -> Rect {
     )
 }
 
+/// Below this the two panes would both be cramped, so the track view stays a
+/// single centred column however the side pane is configured.
+pub const SPLIT_MIN_WIDTH: u16 = 88;
+/// The narrowest side pane worth drawing: titles below this just elide away.
+const SIDE_MIN_WIDTH: u16 = 30;
+/// A column between the panels. Two borders meeting flush reads as one thick
+/// rule rather than two panels.
+const PANE_GAP: u16 = 1;
+
+/// Split the body into the now-playing panel and an optional side panel.
+///
+/// A wide terminal leaves the centred column floating in dead space, which is
+/// what most terminal players fill with a list -- cmus and spotify-tui both
+/// put the browser beside the player rather than under it.
+pub fn track_panes(body: Rect, app: &App) -> (Rect, Option<Rect>) {
+    compute_track_panes(body, app.cell_px, app.cfg.side_pane.shows_anything())
+}
+
+/// The pane geometry, free of `App` so it can be tested directly.
+pub fn compute_track_panes(
+    body: Rect,
+    cell_px: (u16, u16),
+    side_pane: bool,
+) -> (Rect, Option<Rect>) {
+    if !side_pane || body.width < SPLIT_MIN_WIDTH {
+        return (body, None);
+    }
+    // The player column is sized to the widest cover it will ever hold --
+    // the row cap times the cell aspect -- plus its border and a little
+    // breathing room. Anything beyond that is dead space, so it goes to the
+    // list, which reads better wide than narrow.
+    let (cw, ch) = cell_px;
+    let ratio = (ch as f32 / cw.max(1) as f32).max(1.0);
+    let widest_cover = (COVER_MAX_ROWS as f32 * ratio).round() as u16;
+    let left = widest_cover
+        .saturating_add(6)
+        .max(MIN_COL_WIDTH + 4)
+        .min(body.width / 2)
+        .min(body.width - SIDE_MIN_WIDTH - PANE_GAP);
+    (
+        Rect::new(body.x, body.y, left, body.height),
+        Some(Rect::new(
+            body.x + left + PANE_GAP,
+            body.y,
+            body.width - left - PANE_GAP,
+            body.height,
+        )),
+    )
+}
+
 /// Where the cover goes, for the sixel/kitty painter.
 pub fn cover_rect(area: Rect, app: &App) -> Option<Rect> {
-    track_layout(track_inner(area), app).cover
+    let (player, _) = track_panes(area, app);
+    track_layout(track_inner(player), app).cover
 }
 
 /// The region between the tab strip and the footer.
@@ -289,6 +340,84 @@ mod tests {
         assert!(l.meta.x > 0, "should be indented, not flush left");
         let right_gap = 120 - (l.meta.x + l.meta.width);
         assert!(l.meta.x.abs_diff(right_gap) <= 1);
+    }
+
+    fn panes(w: u16, h: u16, on: bool) -> (Rect, Option<Rect>) {
+        compute_track_panes(Rect::new(0, 2, w, h), (8, 16), on)
+    }
+
+    #[test]
+    fn a_narrow_terminal_stays_one_column() {
+        for w in 40..SPLIT_MIN_WIDTH {
+            let (player, side) = panes(w, 30, true);
+            assert!(side.is_none(), "width {w} should not split");
+            assert_eq!(player.width, w, "the player takes the whole body");
+        }
+    }
+
+    #[test]
+    fn the_panes_never_overlap_and_leave_a_gap() {
+        for w in SPLIT_MIN_WIDTH..400 {
+            let (player, side) = panes(w, 30, true);
+            let side = side.expect("should split");
+            assert_eq!(
+                side.x,
+                player.x + player.width + PANE_GAP,
+                "width {w}: panes must not touch"
+            );
+            assert_eq!(
+                player.width + PANE_GAP + side.width,
+                w,
+                "width {w}: panes must fill the body exactly"
+            );
+            assert!(
+                side.width >= SIDE_MIN_WIDTH,
+                "width {w}: side pane {} too narrow",
+                side.width
+            );
+            // The player column must still fit a full-size cover.
+            let inner = track_inner(player);
+            let l = compute_track_layout(inner, (8, 16), 6, true);
+            let cover = l.cover.expect("cover expected");
+            assert!(
+                cover.x + cover.width <= inner.x + inner.width,
+                "width {w}: cover overflows the player pane"
+            );
+        }
+    }
+
+    #[test]
+    fn turning_the_side_pane_off_gives_the_whole_body_back() {
+        let (player, side) = panes(200, 40, false);
+        assert!(side.is_none());
+        assert_eq!(player.width, 200);
+    }
+
+    #[test]
+    fn the_player_pane_does_not_hoard_width_it_cannot_use() {
+        // The cover is capped in rows, so past a point a wider player column
+        // is just dead space -- the whole reason for the split.
+        let (player, _) = panes(300, 40, true);
+        let widest_cover = COVER_MAX_ROWS * 2;
+        assert!(
+            player.width <= widest_cover + 8,
+            "player pane {} much wider than the {widest_cover}-column cover",
+            player.width
+        );
+    }
+
+    #[test]
+    fn a_taller_cell_gets_a_wider_player_pane() {
+        // A square cover needs more columns when cells are tall and narrow,
+        // and the pane has to keep up or the art gets clipped.
+        let square = compute_track_panes(Rect::new(0, 2, 200, 40), (8, 16), true).0;
+        let tall = compute_track_panes(Rect::new(0, 2, 200, 40), (6, 18), true).0;
+        assert!(
+            tall.width > square.width,
+            "tall cells {} should widen the pane past {}",
+            tall.width,
+            square.width
+        );
     }
 
     #[test]
