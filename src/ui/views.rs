@@ -280,15 +280,23 @@ fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
     let faint = app.palette.dark.to_color();
 
     let words: Vec<&str> = MENU_ITEMS.iter().map(|i| A::menu_word(*i)).collect();
-    let banner_w = bigtext::width(WORDMARK);
-    let grid_w = words
-        .iter()
-        .map(|w| bigtext::width(w))
-        .max()
-        .unwrap_or(12)
-        .max(banner_w);
-    // Banner, a gap, then the items with a gap between each.
-    let h = ((BANNER_ROWS + 1 + words.len() * 3 + words.len() - 1 + 2) as u16).min(area.height);
+    let item_w = words.iter().map(|w| bigtext::width(w)).max().unwrap_or(12);
+    // The banner is the widest thing here, but drop it on a pane too small to
+    // hold it rather than clipping the logo.
+    let show_banner = area.width as usize >= crate::ui::banner::width() + 6
+        && area.height as usize >= crate::ui::banner::ROWS + words.len() * 3 + 6;
+    let banner_w = if show_banner {
+        crate::ui::banner::width()
+    } else {
+        0
+    };
+    let grid_w = item_w.max(banner_w);
+    let banner_h = if show_banner {
+        crate::ui::banner::ROWS + 1
+    } else {
+        0
+    };
+    let h = ((banner_h + words.len() * 3 + words.len() - 1 + 2) as u16).min(area.height);
     let w = (grid_w as u16 + 6).min(area.width);
     let popup = Rect::new(
         area.x + (area.width.saturating_sub(w)) / 2,
@@ -299,13 +307,19 @@ fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
     Clear.render(popup, f.buffer_mut());
     let inner = panel(f, popup, "menu", None, app);
 
-    let mut lines: Vec<Line> = banner_lines(app, grid_w);
-    lines.push(Line::default());
+    let mut lines: Vec<Line> = if show_banner {
+        let mut b = banner_lines(app, grid_w);
+        b.push(Line::default());
+        b
+    } else {
+        Vec::new()
+    };
     for (i, word) in words.iter().enumerate() {
         let selected = i == app.menu_sel;
         for row in bigtext::render(word, selected) {
+            // Centred under the banner, which is wider than any item.
             lines.push(Line::from(Span::styled(
-                row,
+                centre(&row, grid_w),
                 if selected {
                     Style::default().fg(accent).add_modifier(Modifier::BOLD)
                 } else {
@@ -324,28 +338,19 @@ fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-/// The wordmark, drawn in the same block letters as the menu entries.
-const WORDMARK: &str = "YTKEW";
-const BANNER_ROWS: usize = 3;
-
-/// The wordmark as three centred lines, shaded down the palette gradient so
-/// it reads as one piece rather than three stripes -- btop colours its banner
-/// the same way.
+/// The wordmark banner, centred and shaded down the ramp.
 fn banner_lines(app: &App, width: usize) -> Vec<Line<'static>> {
-    use crate::ui::bigtext;
-    let shades = app.palette.gradient(BANNER_ROWS);
-    bigtext::render(WORDMARK, true)
+    use crate::ui::banner;
+    let shades = banner::shades(&app.palette);
+    banner::rows()
         .into_iter()
         .enumerate()
         .map(|(i, row)| {
-            let colour = shades
-                .get(BANNER_ROWS - 1 - i)
-                .copied()
-                .map(|c| c.to_color())
-                .unwrap_or_else(|| app.palette.accent().to_color());
             Line::from(Span::styled(
                 centre(&row, width),
-                Style::default().fg(colour).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(shades[i].to_color())
+                    .add_modifier(Modifier::BOLD),
             ))
         })
         .collect()
