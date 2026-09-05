@@ -1,32 +1,23 @@
-<div align="center">
-
-<img src="assets/ytkew.svg" width="96" alt="">
-
 ```
 ██╗   ██╗████████╗██╗  ██╗███████╗██╗    ██╗
 ╚██╗ ██╔╝╚══██╔══╝██║ ██╔╝██╔════╝██║    ██║
  ╚████╔╝    ██║   █████╔╝ █████╗  ██║ █╗ ██║
   ╚██╔╝     ██║   ██╔═██╗ ██╔══╝  ██║███╗██║
    ██║      ██║   ██║  ██╗███████╗╚███╔███╔╝
-   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝
+   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝ 
 ```
+
+<div align="center">
 
 **A terminal YouTube Music player, in the spirit of [kew](https://github.com/ravachol/kew).**
 
-Cover art, a spectrum visualizer, album-derived colours, no distractions —
-playing from your own YouTube Music account.
-
-[Documentation](https://dtdhruv.github.io/ytkew/) ·
-[Install](#install) ·
-[Keys](#keys) ·
-[Configuration](https://dtdhruv.github.io/ytkew/reference/configuration/) ·
-[Contributing](CONTRIBUTING.md)
-
 [![ci](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml)
 [![security](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml)
-[![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-e62525)](LICENSE)
+[![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-e62525?style=flat)](LICENSE)
 
 </div>
+
+<br>
 
 ```
  ytkew   1 queue    2 library    3 track    4 search               not signed in  1/20  vol ▪▪▪▫▫ 60% 
@@ -53,148 +44,49 @@ playing from your own YouTube Music account.
  space play · h/l skip · a/d seek · +/- vol · s shuffle · r repeat · m lyrics · esc menu   F6 help    
 ```
 
-## Why
-
-Every YouTube Music client is either a browser tab or an Electron app. ytkew
-is neither: it is a terminal program that hands playback to **mpv**, so a slow
-redraw can never stutter the audio, and it looks and behaves like kew, which
-got the interface right.
-
-## Features
-
-- **Full-resolution cover art** — kitty graphics where the terminal supports
-  it, sixel where it does not, truecolor half-blocks everywhere else
-- **Gapless playback** — the next track is resolved and buffered while the
-  current one plays, so transitions never stall on a yt-dlp round trip
-- **Spectrum visualizer** — a real FFT over the PipeWire sink monitor
-- **Colours from the artwork**, or ten built-in themes, or write your own
-- **vim keys** — an optional preset with `gg`, `G`, `ctrl+d`, `dd`
-- **A library that browses like a file manager** — each level in its own column
-- **Search across songs, videos, albums, artists and playlists**
-- **A queue that behaves like YouTube Music's** — playing a one-off track
-  mid-playlist slots it in next rather than throwing the playlist away
-- **MPRIS** — media keys, and a now-playing panel entry with artwork
-- **Mouse support** — click tabs and rows, drag the progress bar, scroll lists
-
-## Requirements
-
-`mpv` and `yt-dlp` on `PATH` — ytkew refuses to start without them — plus a
-truecolor terminal. PipeWire is needed for the visualizer only. A YouTube
-Music account is needed only for your own library; search, radio and lyrics
-work signed out.
-
-mpv does the playing; yt-dlp turns a YouTube video into a playable stream.
-[Why both are needed →](https://dtdhruv.github.io/ytkew/start/install/#why-yt-dlp)
-
-## Install
-
-```sh
-# Dependencies — apt, dnf, pacman, zypper or brew
-sudo apt install mpv yt-dlp
-
-git clone https://github.com/dtDhruv/ytkew
-cd ytkew
-make install
-```
-
-> [!TIP]
-> **A stale `yt-dlp` is the most common reason a working ytkew stops playing.**
-> YouTube changes how streams are signed and yt-dlp is what keeps up, so keep
-> it current with `yt-dlp -U`. After three failures in a row ytkew checks the
-> version and tells you how old it is; `ytkew --diagnose` reports it any time.
-
-[Per-platform instructions →](https://dtdhruv.github.io/ytkew/start/install/)
-
-That puts the binary in `~/.local/bin` and the desktop entry and icon under
-`~/.local/share`. `PREFIX=/usr/local sudo make install` for a system-wide
-install; `make uninstall` removes all three.
-
-> [!NOTE]
-> `cargo install` places only the binary, so ytkew will show a generic icon in
-> your launcher and now-playing panel. `make install` is what puts the real
-> one in place.
-
-## Usage
-
-```sh
-ytkew                      # open the interface
-ytkew radiohead creep      # search and start playing, kew-style
-ytkew --auth browser       # set up credentials
-ytkew --diagnose           # report what the terminal and the API can see
-```
-
-## Signing in
-
-**Search, radio, playlists by ID and lyrics need no credentials at all.** Only
-your own library does.
-
-```sh
-ytkew --auth browser     # lifts an existing Firefox login, nothing to paste
-ytkew --auth cookie      # paste a Cookie header from any browser
-ytkew --auth oauth       # Google Cloud "TVs and Limited Input devices" client
-```
-
-`--auth browser` reads the YouTube cookies out of your Firefox profile, so
-signing in at music.youtube.com is all the setup there is. Chromium is not
-supported — it encrypts cookie values against the desktop keyring.
-
-> [!WARNING]
-> A YouTube Music cookie header authenticates as you. ytkew stores it in
-> `~/.config/ytkew/cookie.txt` with owner-only permissions and never sends it
-> anywhere but Google. If one leaks, sign out of Google everywhere to revoke it.
-
-## Keys
-
-| | |
-|---|---|
-| `space` `p` | play / pause |
-| `h` `l` · `←` `→` | previous / next track |
-| `j` `k` · `↑` `↓` | move the selection |
-| `a` `d` | seek back / forward |
-| `+` `-` | volume |
-| `enter` | play the selection |
-| `A` | add to the queue without interrupting |
-| `P` | play everything in the current view |
-| `s` `r` | shuffle / repeat |
-| `v` `b` | cycle the visualizer / show the cover |
-| `.` `R` | like the track / start radio from it |
-| `del` `bksp` | remove one / clear the queue |
-| `m` `/` | lyrics / search |
-| `esc` `q` | menu / quit |
-
-Set `keys = "vim"` for `gg`, `G`, `ctrl+d`/`ctrl+u`, `x`, `dd`, `J`/`K` and
-`H`/`L`. The hint line at the bottom is generated from whichever preset is
-active, so what it shows is always the truth.
-
-**[Full keybinding reference →](https://dtdhruv.github.io/ytkew/guide/keys/)**
-
-## Configuration
-
-`~/.config/ytkew/config.toml`, written with comments on first run and only
-ever read — hand-edits are safe. Runtime state lives separately in
-`state.toml`.
-
-```toml
-theme = "cover"               # a built-in, one of your own, or the album palette
-keys = "kew"                  # kew | vim
-side_pane = "queue"           # off | queue | library
-library_layout = "columns"    # columns | tree
-cover_mode = "auto"           # auto | kitty | sixel | blocks | off
-```
-
-**[Full configuration reference →](https://dtdhruv.github.io/ytkew/reference/configuration/)**
+ytkew plays music from your YouTube Music account without a browser. It takes
+its interface and keybindings from kew, and hands playback to **mpv**, so a
+slow redraw can never stutter the audio.
 
 ## Documentation
 
-**[dtdhruv.github.io/ytkew](https://dtdhruv.github.io/ytkew/)** — install,
-signing in, every key, themes, the album-art story, the full configuration
-table and troubleshooting, with search.
+Everything — installing, signing in, every key, themes, configuration and
+troubleshooting — lives on the site:
+
+### **https://dtdhruv.github.io/ytkew**
+
+## Features
+
+- Full-resolution cover art: kitty graphics, sixel, or truecolor half-blocks.
+- Gapless playback. The next track is resolved and buffered while the current
+  one plays, so transitions never stall.
+- Spectrum visualizer, from a real FFT over the audio output.
+- Colours taken from the album art, ten built-in themes, or write your own.
+- A library that browses like a file manager, one column per level.
+- Search across songs, videos, albums, artists and playlists.
+- A queue that behaves like YouTube Music's: a one-off track played
+  mid-playlist slots in next instead of throwing the playlist away.
+- Optional vim keybindings.
+- MPRIS: media keys, and a now-playing panel entry with artwork.
+- Mouse support throughout.
+- Lyrics, radio, liking tracks, shuffle and repeat.
+
+## Requirements
+
+`mpv` and `yt-dlp` on `PATH`, and a truecolor terminal. PipeWire is needed for
+the visualizer only. Search, radio and lyrics work signed out; only your own
+library needs credentials.
+
+> [!TIP]
+> **A stale `yt-dlp` is the most common reason a working ytkew stops playing.**
+> Keep it current with `yt-dlp -U`.
+
+Linux and macOS. Windows is not supported yet.
 
 ## Contributing
 
-Bug reports, patches and terminal-compatibility notes are all welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the layout of
-the code, and the conventions the tree follows.
+Bug reports, patches, themes and terminal-compatibility notes are all welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
@@ -205,9 +97,8 @@ It talks to an unofficial API that can change at any time.
 
 ## Credits
 
-- [kew](https://github.com/ravachol/kew) — the interface and keybindings this
-  follows
-- [btop](https://github.com/aristocratos/btop) — the banner and the red ramp
-- [ytmapi-rs](https://github.com/nick42d/youtui) — the YouTube Music protocol layer
-- [ratatui](https://github.com/ratatui/ratatui), [mpv](https://mpv.io),
-  [yt-dlp](https://github.com/yt-dlp/yt-dlp) — everything else that does the work
+[kew](https://github.com/ravachol/kew) for the interface and keybindings ·
+[btop](https://github.com/aristocratos/btop) for the banner and the red ·
+[ytmapi-rs](https://github.com/nick42d/youtui) for the protocol layer ·
+[ratatui](https://github.com/ratatui/ratatui), [mpv](https://mpv.io) and
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) for the rest.

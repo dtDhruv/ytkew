@@ -63,6 +63,10 @@ for i, row in enumerate(rows):
     if cells:
         parts.append(f'  <g fill="{RAMP[i]}">{"".join(cells)}</g>')
 parts.append("</svg>")
+# Only the website needs this. The README shows the banner as text in a code
+# fence, where GitHub's monospace font tiles the block characters correctly --
+# it is arbitrary web pages that cannot be trusted to.
 out = pathlib.Path("docs/src/assets/wordmark.svg")
+out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text("\n".join(parts) + "\n")
-print(f"wrote {out} ({W:.0f}x{H:.0f}, {sum(len(shapes(c, 0, 0)) for r in rows for c in r)} shapes)")
+print(f"wrote {out} ({W:.0f}x{H:.0f})")
