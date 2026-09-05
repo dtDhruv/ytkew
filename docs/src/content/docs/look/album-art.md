@@ -22,18 +22,9 @@ across the screen as literal text.
 something to cycle past on the way to turning it off: set `cover_mode`, or
 pick it from the options pane.
 
-## Why sixel is hard
-
-Nothing reliably reports a terminal's cell size in pixels.
-
-- Under zellij, the tty window size gives the **outer window's** pixels with
-  the **pane's** cell count, so dividing them is nonsense.
-- zellij also has an open bug that renders sixel at double height, which
-  nothing the terminal reports reflects.
-- A cursor-advance probe measures something real but disagrees with both.
-
-So `auto` only chooses sixel when the size has been pinned by hand, and
-half-blocks — always correctly sized — are the safe default.
+`auto` only picks sixel when the cell size has been pinned by hand, because
+nothing reports it reliably — under a multiplexer the numbers are simply
+wrong. Half-blocks are always correctly sized, so they are the safe default.
 
 ## Fixing the scale
 

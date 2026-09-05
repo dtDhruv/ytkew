@@ -79,15 +79,16 @@ troubleshooting — lives on the site:
 
 ## Requirements
 
-`mpv` and `yt-dlp` on `PATH`, and a truecolor terminal. PipeWire is needed for
-the visualizer only. Search, radio and lyrics work signed out; only your own
-library needs credentials.
+`mpv` 0.30+ and `yt-dlp` on `PATH`, and a truecolor terminal. Search, radio
+and lyrics work signed out; only your own library needs credentials.
+
+**Linux and macOS.** On macOS the spectrum visualizer and media keys are
+unavailable — they need PipeWire and D-Bus — but everything else works the
+same. Windows is not supported yet.
 
 > [!TIP]
 > **A stale `yt-dlp` is the most common reason a working ytkew stops playing.**
 > Keep it current with `yt-dlp -U`.
-
-Linux and macOS. Windows is not supported yet.
 
 ## Contributing
 

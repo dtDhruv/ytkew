@@ -39,3 +39,8 @@ height. `off` reclaims the rows for the rest of the layout.
 The spectrum is a real FFT over the PipeWire **sink monitor**, which means it
 captures everything the machine is playing, not just ytkew. That is how cava
 behaves too.
+
+:::note
+PipeWire is Linux-only, so on macOS the visualizer stays flat. Set
+`visualizer_mode = "off"` to reclaim the rows.
+:::

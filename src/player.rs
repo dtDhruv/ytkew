@@ -223,7 +223,7 @@ impl Player {
         let socket = socket_path();
         let _ = std::fs::remove_file(&socket);
 
-        let child = Command::new("mpv")
+        let mut child = Command::new("mpv")
             .arg("--no-video")
             .arg("--no-terminal")
             .arg("--idle=yes")
@@ -250,7 +250,10 @@ impl Player {
             .arg(format!("--volume={initial_volume}"))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            // Piped, not discarded: when mpv refuses to start, this is the
+            // only place that says why. Drained by a task below so the pipe
+            // cannot fill and wedge mpv.
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .context(
@@ -260,7 +263,8 @@ impl Player {
                    brew install mpv",
             )?;
 
-        let stream = connect_with_retry(&socket).await?;
+        let complaints = drain_stderr(&mut child);
+        let stream = connect_with_retry(&socket, &mut child, &complaints).await?;
         let (read_half, mut write_half) = stream.into_split();
 
         let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
@@ -495,19 +499,81 @@ fn socket_path() -> PathBuf {
 }
 
 /// mpv creates the socket a little after exec, so poll briefly for it.
-async fn connect_with_retry(path: &PathBuf) -> Result<UnixStream> {
-    for _ in 0..100 {
+/// How long to let mpv get as far as creating its socket.
+///
+/// Generous on purpose. A cold start on macOS can take seconds the first
+/// time -- Gatekeeper verifies the binary and every dylib Homebrew pulled in
+/// behind it -- and the old five-second budget turned that into a failure
+/// that went away when you ran it again. Waiting longer costs nothing when
+/// mpv is healthy, because the moment the socket answers we stop; and it
+/// costs nothing when mpv is broken either, because a dead child is noticed
+/// immediately rather than waited out.
+const SOCKET_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Collect mpv's stderr in the background, keeping the tail.
+///
+/// Must be drained rather than merely piped: a pipe nobody reads fills up and
+/// blocks the writer, and a wedged mpv is worse than a noisy one.
+fn drain_stderr(child: &mut Child) -> Arc<std::sync::Mutex<Vec<String>>> {
+    let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let Some(stderr) = child.stderr.take() else {
+        return lines;
+    };
+    let sink = lines.clone();
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            let mut held = sink.lock().unwrap_or_else(|e| e.into_inner());
+            // Only the tail matters, and mpv can be chatty about codecs.
+            if held.len() == 20 {
+                held.remove(0);
+            }
+            held.push(line);
+        }
+    });
+    lines
+}
+
+fn complaints_of(lines: &Arc<std::sync::Mutex<Vec<String>>>) -> String {
+    let held = lines.lock().unwrap_or_else(|e| e.into_inner());
+    if held.is_empty() {
+        return String::new();
+    }
+    format!("\n\nmpv said:\n  {}", held.join("\n  "))
+}
+
+async fn connect_with_retry(
+    path: &PathBuf,
+    child: &mut Child,
+    complaints: &Arc<std::sync::Mutex<Vec<String>>>,
+) -> Result<UnixStream> {
+    let start = std::time::Instant::now();
+    while start.elapsed() < SOCKET_TIMEOUT {
         if path.exists() {
             if let Ok(s) = UnixStream::connect(path).await {
                 return Ok(s);
             }
         }
+        // A child that has already exited is never going to create the
+        // socket, so say so now with whatever mpv managed to complain about
+        // rather than sitting out the whole timeout.
+        if let Ok(Some(status)) = child.try_wait() {
+            // Give the reader a moment to catch the last of stderr.
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            bail!(
+                "mpv exited immediately ({status}).{}\n\n\
+                 ytkew needs mpv 0.30 or newer. Check yours with `mpv --version`.",
+                complaints_of(complaints)
+            );
+        }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    Err(anyhow!(
-        "mpv IPC socket never appeared at {} -- mpv may have failed to start",
-        path.display()
-    ))
+    bail!(
+        "mpv did not open its IPC socket at {} within {}s.{}",
+        path.display(),
+        SOCKET_TIMEOUT.as_secs(),
+        complaints_of(complaints)
+    )
 }
 
 #[cfg(test)]
