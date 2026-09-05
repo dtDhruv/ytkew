@@ -1,3 +1,4 @@
+pub mod bigtext;
 pub mod views;
 pub mod widgets;
 

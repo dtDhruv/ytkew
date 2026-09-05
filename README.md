@@ -147,7 +147,6 @@ kew's bindings, unchanged where they made sense.
 | `r` | repeat (off → all → one) |
 | `v` | cycle visualizer (bars → braille → off) |
 | `b` | show / hide album art |
-| `t` | cycle colour theme |
 | `.` | like current track |
 | `R` | start radio from current track |
 | `enter` | add to queue (plays if idle) |
@@ -155,7 +154,7 @@ kew's bindings, unchanged where they made sense.
 | `[` `]` | resize sixel art (only needed if its scale is off) |
 | `f` `g` | move track up / down in queue |
 | `del` / `bksp` | remove one / clear the whole queue |
-| `esc` | menu (play all, shuffle, repeat, clear queue, help, quit) |
+| `esc` | menu — options, help, quit |
 | `P` | play everything in the current view |
 | `1`–`4` | jump to a tab, as numbered in the strip |
 | `F2`–`F6` | queue, library, track, search, help |

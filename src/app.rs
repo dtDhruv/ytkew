@@ -109,12 +109,7 @@ pub struct HitRegions {
 /// Entries in the overlay menu, in order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuItem {
-    PlayAll,
-    Renderer,
-    Theme,
-    Shuffle,
-    Repeat,
-    ClearQueue,
+    Options,
     Help,
     Quit,
 }
@@ -125,20 +120,73 @@ enum MenuOutcome {
     Consumed,
     /// Not a menu key; the menu closed and normal handling should proceed.
     Fallthrough,
-    /// The menu chose an action for the normal dispatcher to run.
-    Run(Action),
 }
 
-pub const MENU_ITEMS: [MenuItem; 8] = [
-    MenuItem::PlayAll,
-    MenuItem::Renderer,
-    MenuItem::Theme,
-    MenuItem::Shuffle,
-    MenuItem::Repeat,
-    MenuItem::ClearQueue,
-    MenuItem::Help,
-    MenuItem::Quit,
+pub const MENU_ITEMS: [MenuItem; 3] = [MenuItem::Options, MenuItem::Help, MenuItem::Quit];
+
+/// Which pane of the overlay is showing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuScreen {
+    Main,
+    Options,
+}
+
+/// A row in the options pane. Each is a fixed list of choices stepped through
+/// with the left and right arrows, which is how btop's options read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setting {
+    Theme,
+    Renderer,
+    ShowCover,
+    Visualizer,
+    Shuffle,
+    Repeat,
+    AutoplayRadio,
+}
+
+pub const SETTINGS: [Setting; 7] = [
+    Setting::Theme,
+    Setting::Renderer,
+    Setting::ShowCover,
+    Setting::Visualizer,
+    Setting::Shuffle,
+    Setting::Repeat,
+    Setting::AutoplayRadio,
 ];
+
+impl Setting {
+    pub fn label(self) -> &'static str {
+        match self {
+            Setting::Theme => "Theme",
+            Setting::Renderer => "Cover renderer",
+            Setting::ShowCover => "Show cover art",
+            Setting::Visualizer => "Visualizer",
+            Setting::Shuffle => "Shuffle",
+            Setting::Repeat => "Repeat",
+            Setting::AutoplayRadio => "Autoplay radio",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Setting::Theme => {
+                "Colours for borders, text and accents. \"cover\" samples them from the album art."
+            }
+            Setting::Renderer => {
+                "How album art is drawn. Kitty sizes in cells and needs no tuning; sixel needs an accurate cell size; blocks work anywhere."
+            }
+            Setting::ShowCover => "Show the artwork at all. Same as pressing b.",
+            Setting::Visualizer => {
+                "Spectrum style. Braille packs four levels per cell; off reclaims the rows."
+            }
+            Setting::Shuffle => "Play the queue in a random order.",
+            Setting::Repeat => "Off stops at the end, all wraps, one loops the track.",
+            Setting::AutoplayRadio => {
+                "After playing a single search hit, append YouTube's radio mix so it keeps going."
+            }
+        }
+    }
+}
 
 /// The palette a theme name resolves to. `cover` has no fixed colours -- it
 /// starts from the accent and is replaced once artwork loads.
@@ -280,6 +328,8 @@ pub struct App {
     /// btop-style overlay menu: escape opens it, q still quits outright.
     pub menu_open: bool,
     pub menu_sel: usize,
+    pub menu_screen: MenuScreen,
+    pub option_sel: usize,
     /// A library node whose children were requested so its whole contents
     /// could be played once they arrive.
     pending_play: Option<Vec<usize>>,
@@ -377,6 +427,8 @@ impl App {
             theme: active_theme,
             menu_open: false,
             menu_sel: 0,
+            menu_screen: MenuScreen::Main,
+            option_sel: 0,
             pending_play: None,
             graphics: cfg_graphics,
             sixel_on_screen: None,
@@ -384,14 +436,6 @@ impl App {
             mpv_pos: 0,
             tx,
         }
-    }
-
-    /// Step to the next theme, and repaint any artwork so a kitty placement
-    /// does not keep the previous theme's framing around it.
-    pub fn cycle_theme(&mut self) {
-        self.theme = crate::theme::next(&self.theme).to_string();
-        self.apply_theme();
-        self.notify(format!("theme: {}", self.theme));
     }
 
     /// Recompute the palette for the current theme. Under `cover` this waits
@@ -412,23 +456,6 @@ impl App {
     /// True when colours should follow the artwork.
     fn theme_follows_cover(&self) -> bool {
         self.theme.eq_ignore_ascii_case(crate::theme::COVER)
-    }
-
-    /// Step to the next art renderer, leaving visibility alone.
-    pub fn cycle_renderer(&mut self) {
-        self.invalidate_sixel();
-        self.cfg.cover_mode = self.cfg.cover_mode.cycle();
-        self.graphics = Graphics::resolve(&self.cfg, self.cell_source);
-        let mut msg = format!("cover renderer: {}", self.cfg.cover_mode.name());
-        if self.graphics == Graphics::Sixel && !self.cell_source.is_trustworthy() {
-            let (w, h) = self.cell_px;
-            msg.push_str(&format!(" (cell size guessed {w}x{h}; [ / ] to resize)"));
-        } else if self.cfg.cover_mode == crate::config::CoverMode::Kitty
-            && self.graphics != Graphics::Kitty
-        {
-            msg.push_str(" (this terminal did not answer the kitty query)");
-        }
-        self.notify(msg);
     }
 
     /// Adjust the assumed cell height by `delta` px, deriving the width from
@@ -1055,81 +1082,179 @@ impl App {
         }
     }
 
-    /// Label for a menu row, reflecting current state where it matters.
-    pub fn menu_label(&self, item: MenuItem) -> String {
+    /// The word rendered in block letters for a top-level menu row.
+    pub fn menu_word(item: MenuItem) -> &'static str {
         match item {
-            MenuItem::PlayAll => match self.view {
-                View::Library => match self.selected_container_name() {
-                    Some(name) => format!("Play all of {name}"),
-                    None => "Play all".into(),
-                },
-                View::Search => "Play all results".into(),
-                _ => "Play queue from start".into(),
-            },
-            MenuItem::Renderer => format!(
-                "Cover: {} ({})",
-                self.cfg.cover_mode.name(),
-                if self.cover_visible { "shown" } else { "hidden" }
-            ),
-            MenuItem::Theme => format!("Theme: {}", self.theme),
-            MenuItem::Shuffle => {
-                format!("Shuffle: {}", if self.queue.shuffle { "on" } else { "off" })
+            MenuItem::Options => "OPTIONS",
+            MenuItem::Help => "HELP",
+            MenuItem::Quit => "QUIT",
+        }
+    }
+
+    /// The choices for a setting and which one is current.
+    pub fn setting_choices(&self, s: Setting) -> (Vec<String>, usize) {
+        let pick = |names: &[&str], cur: &str| -> (Vec<String>, usize) {
+            let v: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+            let i = v.iter().position(|n| n.eq_ignore_ascii_case(cur)).unwrap_or(0);
+            (v, i)
+        };
+        match s {
+            Setting::Theme => {
+                let names = crate::theme::names();
+                let i = names
+                    .iter()
+                    .position(|n| n.eq_ignore_ascii_case(&self.theme))
+                    .unwrap_or(0);
+                (names.iter().map(|n| n.to_string()).collect(), i)
             }
-            MenuItem::Repeat => format!(
-                "Repeat: {}",
+            Setting::Renderer => pick(
+                &["auto", "kitty", "sixel", "blocks"],
+                self.cfg.cover_mode.name(),
+            ),
+            Setting::ShowCover => pick(&["on", "off"], if self.cover_visible { "on" } else { "off" }),
+            Setting::Visualizer => pick(
+                &["bars", "braille", "off"],
+                match self.cfg.visualizer_mode {
+                    crate::config::VisualizerMode::Bars => "bars",
+                    crate::config::VisualizerMode::Braille => "braille",
+                    crate::config::VisualizerMode::Off => "off",
+                },
+            ),
+            Setting::Shuffle => pick(&["off", "on"], if self.queue.shuffle { "on" } else { "off" }),
+            Setting::Repeat => pick(
+                &["off", "all", "one"],
                 match self.queue.repeat {
                     RepeatMode::Off => "off",
                     RepeatMode::All => "all",
                     RepeatMode::One => "one",
-                }
+                },
             ),
-            MenuItem::ClearQueue => format!("Clear queue ({})", self.queue.len()),
-            MenuItem::Help => "Help".into(),
-            MenuItem::Quit => "Quit".into(),
+            Setting::AutoplayRadio => {
+                pick(&["on", "off"], if self.cfg.autoplay_radio { "on" } else { "off" })
+            }
         }
     }
 
-    fn selected_container_name(&self) -> Option<String> {
-        let row = self.library_rows.get(self.library_sel)?;
-        (!row.is_song).then(|| row.label.clone())
+    /// Current value of a setting, for display.
+    pub fn setting_value(&self, s: Setting) -> String {
+        let (choices, i) = self.setting_choices(s);
+        choices.get(i).cloned().unwrap_or_default()
     }
 
-    /// Keys while the menu is open.
+    /// Step a setting left or right, wrapping.
+    pub fn adjust_setting(&mut self, s: Setting, delta: i32) {
+        let (choices, i) = self.setting_choices(s);
+        if choices.is_empty() {
+            return;
+        }
+        let n = choices.len() as i32;
+        let next = (((i as i32 + delta) % n) + n) % n;
+        let value = choices[next as usize].clone();
+        self.apply_setting(s, &value);
+    }
+
+    fn apply_setting(&mut self, s: Setting, value: &str) {
+        use crate::config::{CoverMode, VisualizerMode};
+        match s {
+            Setting::Theme => {
+                self.theme = value.to_string();
+                self.apply_theme();
+            }
+            Setting::Renderer => {
+                self.invalidate_sixel();
+                self.cfg.cover_mode = match value {
+                    "kitty" => CoverMode::Kitty,
+                    "sixel" => CoverMode::Sixel,
+                    "blocks" => CoverMode::Blocks,
+                    _ => CoverMode::Auto,
+                };
+                self.graphics = Graphics::resolve(&self.cfg, self.cell_source);
+            }
+            Setting::ShowCover => {
+                self.invalidate_sixel();
+                self.cover_visible = value == "on";
+            }
+            Setting::Visualizer => {
+                self.cfg.visualizer_mode = match value {
+                    "braille" => VisualizerMode::Braille,
+                    "off" => VisualizerMode::Off,
+                    _ => VisualizerMode::Bars,
+                };
+                // The visualizer changes the layout, so any art must be redrawn.
+                self.invalidate_sixel();
+            }
+            Setting::Shuffle => {
+                if (value == "on") != self.queue.shuffle {
+                    self.queue.toggle_shuffle();
+                    self.resync_prefetch();
+                }
+            }
+            Setting::Repeat => {
+                self.queue.repeat = match value {
+                    "all" => RepeatMode::All,
+                    "one" => RepeatMode::One,
+                    _ => RepeatMode::Off,
+                };
+                let _ = self
+                    .player
+                    .set_loop_file(self.queue.repeat == RepeatMode::One);
+                self.resync_prefetch();
+            }
+            Setting::AutoplayRadio => self.cfg.autoplay_radio = value == "on",
+        }
+    }
+
+    /// Keys while the overlay is open.
     fn handle_menu_action(&mut self, action: Action) -> MenuOutcome {
         if !self.menu_open {
             return MenuOutcome::Fallthrough;
         }
-        match action {
-            Action::ScrollUp => {
-                self.menu_sel = self.menu_sel.saturating_sub(1);
-            }
-            Action::ScrollDown => {
-                self.menu_sel = (self.menu_sel + 1).min(MENU_ITEMS.len() - 1);
-            }
-            Action::ToggleMenu => self.menu_open = false,
-            Action::Enqueue | Action::EnqueueAndPlay => {
-                let item = MENU_ITEMS[self.menu_sel.min(MENU_ITEMS.len() - 1)];
-                self.menu_open = false;
-                // Items that map onto an existing action are handed back to
-                // the normal dispatcher rather than recursing into it.
-                match item {
-                    MenuItem::PlayAll => self.play_all_in_context(),
-                    MenuItem::Renderer => self.cycle_renderer(),
-                    MenuItem::Theme => self.cycle_theme(),
-                    MenuItem::Shuffle => return MenuOutcome::Run(Action::Shuffle),
-                    MenuItem::Repeat => return MenuOutcome::Run(Action::ToggleRepeat),
-                    MenuItem::ClearQueue => return MenuOutcome::Run(Action::ClearQueue),
-                    MenuItem::Help => self.set_view(View::Help),
-                    MenuItem::Quit => self.should_quit = true,
+        match self.menu_screen {
+            MenuScreen::Main => match action {
+                Action::ScrollUp => self.menu_sel = self.menu_sel.saturating_sub(1),
+                Action::ScrollDown => {
+                    self.menu_sel = (self.menu_sel + 1).min(MENU_ITEMS.len() - 1)
                 }
-            }
-            Action::Quit => self.should_quit = true,
-            // Anything else closes the menu and falls through to normal
-            // handling, so the menu never traps you.
-            _ => {
-                self.menu_open = false;
-                return MenuOutcome::Fallthrough;
-            }
+                Action::ToggleMenu => self.menu_open = false,
+                Action::Enqueue | Action::EnqueueAndPlay => {
+                    match MENU_ITEMS[self.menu_sel.min(MENU_ITEMS.len() - 1)] {
+                        MenuItem::Options => {
+                            self.menu_screen = MenuScreen::Options;
+                            self.option_sel = 0;
+                        }
+                        MenuItem::Help => {
+                            self.menu_open = false;
+                            self.set_view(View::Help);
+                        }
+                        MenuItem::Quit => self.should_quit = true,
+                    }
+                }
+                Action::Quit => self.should_quit = true,
+                _ => {
+                    self.menu_open = false;
+                    return MenuOutcome::Fallthrough;
+                }
+            },
+            MenuScreen::Options => match action {
+                Action::ScrollUp => self.option_sel = self.option_sel.saturating_sub(1),
+                Action::ScrollDown => {
+                    self.option_sel = (self.option_sel + 1).min(SETTINGS.len() - 1)
+                }
+                // Left and right step the value, which is what the arrows
+                // beside the selected row advertise.
+                Action::Prev => {
+                    let s = SETTINGS[self.option_sel.min(SETTINGS.len() - 1)];
+                    self.adjust_setting(s, -1);
+                }
+                Action::Next | Action::Enqueue | Action::EnqueueAndPlay => {
+                    let s = SETTINGS[self.option_sel.min(SETTINGS.len() - 1)];
+                    self.adjust_setting(s, 1);
+                }
+                // Escape backs out to the menu rather than closing outright.
+                Action::ToggleMenu => self.menu_screen = MenuScreen::Main,
+                Action::Quit => self.should_quit = true,
+                _ => {}
+            },
         }
         MenuOutcome::Consumed
     }
@@ -1213,11 +1338,10 @@ impl App {
     }
 
     pub async fn handle_action(&mut self, action: Action) -> Result<()> {
-        let action = match self.handle_menu_action(action) {
+        match self.handle_menu_action(action) {
             MenuOutcome::Consumed => return Ok(()),
-            MenuOutcome::Fallthrough => action,
-            MenuOutcome::Run(next) => next,
-        };
+            MenuOutcome::Fallthrough => {}
+        }
         match action {
             Action::Quit => self.should_quit = true,
             Action::PlayPause => {
@@ -1328,10 +1452,10 @@ impl App {
             Action::ToggleLike => self.like_current(),
             Action::StartRadio => self.radio_from_current(),
             Action::PlayAll => self.play_all_in_context(),
-            Action::CycleTheme => self.cycle_theme(),
             Action::ToggleMenu => {
                 self.menu_open = !self.menu_open;
                 self.menu_sel = 0;
+                self.menu_screen = MenuScreen::Main;
             }
             Action::CoverSmaller => self.nudge_cover(-2),
             Action::CoverBigger => self.nudge_cover(2),

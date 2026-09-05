@@ -49,8 +49,6 @@ pub enum Action {
     PlayAll,
     /// Open or close the menu overlay.
     ToggleMenu,
-    /// Step to the next colour theme.
-    CycleTheme,
     /// Shrink the assumed cell size, making sixel art smaller.
     CoverSmaller,
     /// Grow the assumed cell size, making sixel art larger.
@@ -81,18 +79,6 @@ impl CoverMode {
     /// terminal's report, the tty window size and a cursor-advance probe all
     /// disagree with what actually gets drawn under a multiplexer. Blocks are
     /// always correctly sized, so they are the safe default.
-    /// Step to the next renderer. `Off` is deliberately not in the cycle:
-    /// showing or hiding the art is a separate toggle, so this only ever
-    /// chooses *how* it is drawn.
-    pub fn cycle(self) -> Self {
-        match self {
-            CoverMode::Auto => CoverMode::Kitty,
-            CoverMode::Kitty => CoverMode::Sixel,
-            CoverMode::Sixel => CoverMode::Blocks,
-            CoverMode::Blocks | CoverMode::Off => CoverMode::Auto,
-        }
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             CoverMode::Auto => "auto",
@@ -373,7 +359,6 @@ impl Default for Keymap {
             (Char('r'), NONE, ToggleRepeat),
             (Char('v'), NONE, CycleVisualizer),
             (Char('b'), NONE, ToggleAscii),
-            (Char('t'), NONE, CycleTheme),
             (Char('.'), NONE, ToggleLike),
             (Char('R'), SHIFT, StartRadio),
             (Char('['), NONE, CoverSmaller),
@@ -498,33 +483,6 @@ mod tests {
         let keys = km.keys_for(Action::PlayPause);
         assert!(keys.contains(&"space".to_string()));
         assert!(keys.contains(&"p".to_string()));
-    }
-
-    #[test]
-    fn the_renderer_cycle_never_lands_on_off() {
-        // `b` shows and hides the art, so the renderer cycle must only ever
-        // choose *how* to draw it -- otherwise one key does two jobs again.
-        let mut m = CoverMode::Auto;
-        for _ in 0..8 {
-            m = m.cycle();
-            assert_ne!(m, CoverMode::Off, "off is not a renderer");
-        }
-        // And it visits every real renderer exactly once before repeating.
-        let mut seen = Vec::new();
-        let mut m = CoverMode::Auto;
-        for _ in 0..4 {
-            assert!(!seen.contains(&m), "revisited {m:?} too early");
-            seen.push(m);
-            m = m.cycle();
-        }
-        assert_eq!(seen.len(), 4);
-        assert_eq!(m, CoverMode::Auto, "should return to where it started");
-    }
-
-    #[test]
-    fn a_config_set_to_off_recovers_into_the_cycle() {
-        // Older configs may still say "off"; cycling must not strand there.
-        assert_eq!(CoverMode::Off.cycle(), CoverMode::Auto);
     }
 
     #[test]

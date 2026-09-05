@@ -262,17 +262,27 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// The overlay menu: escape opens it, j/k move, enter selects, escape closes.
+/// The overlay: btop's three block-letter entries, or the options pane once
+/// Options is chosen.
 fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
-    let accent = app.palette.accent().to_color();
-    let dim = app.palette.secondary().to_color();
+    use crate::app::MenuScreen;
+    match app.menu_screen {
+        MenuScreen::Main => draw_menu_main(f, area, app),
+        MenuScreen::Options => draw_options(f, area, app),
+    }
+}
 
-    let labels: Vec<String> = crate::app::MENU_ITEMS
-        .iter()
-        .map(|i| app.menu_label(*i))
-        .collect();
-    let w = (labels.iter().map(|l| l.width()).max().unwrap_or(10) as u16 + 6).min(area.width);
-    let h = (labels.len() as u16 + 2).min(area.height);
+fn draw_menu_main(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::{App as A, MENU_ITEMS};
+    use crate::ui::bigtext;
+
+    let accent = app.palette.accent().to_color();
+    let faint = app.palette.dark.to_color();
+
+    let words: Vec<&str> = MENU_ITEMS.iter().map(|i| A::menu_word(*i)).collect();
+    let grid_w = words.iter().map(|w| bigtext::width(w)).max().unwrap_or(12);
+    let h = ((words.len() * 3 + words.len() - 1 + 2) as u16).min(area.height);
+    let w = (grid_w as u16 + 6).min(area.width);
     let popup = Rect::new(
         area.x + (area.width.saturating_sub(w)) / 2,
         area.y + (area.height.saturating_sub(h)) / 2,
@@ -282,25 +292,145 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
     Clear.render(popup, f.buffer_mut());
     let inner = panel(f, popup, "menu", None, app);
 
-    let lines: Vec<Line> = labels
-        .iter()
-        .enumerate()
-        .map(|(i, label)| {
-            let selected = i == app.menu_sel;
-            let marker = if selected { " ▸ " } else { "   " };
-            Line::from(Span::styled(
-                fit(&format!("{marker}{label}"), inner.width as usize),
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, word) in words.iter().enumerate() {
+        let selected = i == app.menu_sel;
+        for row in bigtext::render(word, selected) {
+            lines.push(Line::from(Span::styled(
+                row,
                 if selected {
-                    Style::default()
-                        .fg(accent)
-                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                    Style::default().fg(accent).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(dim)
+                    Style::default().fg(faint)
                 },
-            ))
-        })
-        .collect();
+            )));
+        }
+        if i + 1 < words.len() {
+            lines.push(Line::default());
+        }
+    }
+    let x = inner.x + (inner.width.saturating_sub(grid_w as u16)) / 2;
+    Paragraph::new(lines).render(
+        Rect::new(x, inner.y, grid_w as u16, inner.height),
+        f.buffer_mut(),
+    );
+}
+
+/// The options pane. Each setting is two rows -- its name, then its value --
+/// with arrows beside the value of the selected row, and that row's
+/// description below the list. This is btop's options layout.
+fn draw_options(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::SETTINGS;
+
+    let accent = app.palette.accent().to_color();
+    let dim = app.palette.secondary().to_color();
+    let faint = app.palette.dark.to_color();
+
+    const BODY: u16 = 40;
+    let w = (BODY + 4).min(area.width);
+    // Two rows per setting, a blank line, two of description, two of border.
+    let h = ((SETTINGS.len() as u16 * 2) + 5).min(area.height);
+    let popup = Rect::new(
+        area.x + (area.width.saturating_sub(w)) / 2,
+        area.y + (area.height.saturating_sub(h)) / 2,
+        w,
+        h,
+    );
+    Clear.render(popup, f.buffer_mut());
+    let inner = panel(f, popup, "options", None, app);
+    if inner.width < 8 || inner.height < 4 {
+        return;
+    }
+    let width = inner.width as usize;
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, setting) in SETTINGS.iter().enumerate() {
+        let selected = i == app.option_sel;
+        // Name row.
+        lines.push(Line::from(Span::styled(
+            centre(setting.label(), width),
+            if selected {
+                Style::default()
+                    .fg(accent)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+            } else {
+                Style::default().fg(dim).add_modifier(Modifier::BOLD)
+            },
+        )));
+        // Value row, with arrows only where they can be used.
+        let value = app.setting_value(*setting);
+        if selected {
+            // One column for each arrow, so the three spans total exactly the
+            // row width and the arrows sit hard against the edges.
+            let inner_w = width.saturating_sub(2);
+            lines.push(Line::from(vec![
+                Span::styled("←", Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+                Span::styled(centre(&value, inner_w), Style::default().fg(accent)),
+                Span::styled("→", Style::default().fg(accent).add_modifier(Modifier::BOLD)),
+            ]));
+        } else {
+            lines.push(Line::from(Span::styled(
+                centre(&value, width),
+                Style::default().fg(faint),
+            )));
+        }
+    }
+    lines.push(Line::default());
+
+    // Description of the highlighted setting, wrapped to two lines.
+    let desc = SETTINGS[app.option_sel.min(SETTINGS.len() - 1)].description();
+    for chunk in wrap(desc, width, 2) {
+        lines.push(Line::from(Span::styled(
+            chunk,
+            Style::default().fg(dim).add_modifier(Modifier::ITALIC),
+        )));
+    }
     Paragraph::new(lines).render(inner, f.buffer_mut());
+}
+
+/// Centre text in exactly `w` columns, padded on both sides so a highlighted
+/// row spans the full width and the right-hand arrow sits at the edge.
+fn centre(s: &str, w: usize) -> String {
+    let t = elide(s, w as u16);
+    let used = t.width();
+    let left = (w - used) / 2;
+    let right = w - used - left;
+    let mut out = " ".repeat(left);
+    out.push_str(&t);
+    out.push_str(&" ".repeat(right));
+    out
+}
+
+/// Greedy wrap to at most `max_lines` lines of `w` columns.
+fn wrap(text: &str, w: usize, max_lines: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let candidate = if line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{line} {word}")
+        };
+        if candidate.width() > w && !line.is_empty() {
+            out.push(std::mem::take(&mut line));
+            if out.len() == max_lines {
+                // Mark that more was cut rather than ending mid-sentence.
+                if let Some(last) = out.last_mut() {
+                    if last.width() < w {
+                        last.push('…');
+                    }
+                }
+                return out;
+            }
+            line = word.to_string();
+        } else {
+            line = candidate;
+        }
+    }
+    if !line.is_empty() && out.len() < max_lines {
+        out.push(line);
+    }
+    out
 }
 
 /// Browser-style tab strip: a rule under the whole width that breaks around
@@ -552,7 +682,6 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
             ("s", "shuffle"),
             ("r", "repeat"),
             ("m", "lyrics"),
-            ("t", "theme"),
             ("esc", "menu"),
         ],
         View::Queue => &[
@@ -933,7 +1062,7 @@ fn draw_help(f: &mut Frame, area: Rect, app: &App) {
         ("Repeat (off/all/one)", k(ToggleRepeat)),
         ("Cycle visualizer", k(CycleVisualizer)),
         ("Show / hide cover art", k(ToggleAscii)),
-        ("Cycle theme", k(CycleTheme)),
+        ("Menu / options", k(ToggleMenu)),
         ("Like current track", k(ToggleLike)),
         ("Start radio from track", k(StartRadio)),
         ("Add to queue", k(Enqueue)),

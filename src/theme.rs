@@ -111,14 +111,6 @@ pub fn find(name: &str) -> Option<&'static Theme> {
     THEMES.iter().find(|t| t.name == n)
 }
 
-/// The name after `current` in the cycle, wrapping.
-pub fn next(current: &str) -> &'static str {
-    let all = names();
-    let cur = current.trim().to_ascii_lowercase();
-    let i = all.iter().position(|n| *n == cur).unwrap_or(0);
-    all[(i + 1) % all.len()]
-}
-
 /// Parse `#rrggbb` or `rrggbb`.
 pub fn parse_hex(s: &str) -> Option<Rgb> {
     let h = s.trim().trim_start_matches('#');
@@ -194,15 +186,10 @@ mod tests {
     }
 
     #[test]
-    fn cycling_visits_every_theme_and_wraps() {
+    fn cover_leads_the_list_so_it_is_the_first_choice() {
         let all = names();
-        let mut cur = all[0];
-        for _ in 0..all.len() {
-            cur = next(cur);
-        }
-        assert_eq!(cur, all[0], "a full cycle should return to the start");
-        // An unknown name restarts the cycle rather than getting stuck.
-        assert_eq!(next("nonsense"), all[1]);
+        assert_eq!(all[0], COVER);
+        assert_eq!(all.len(), THEMES.len() + 1);
     }
 
     #[test]
