@@ -1,0 +1,99 @@
+name: pages
+
+# Publishes docs/ to GitHub Pages. The site is plain HTML and CSS with no
+# build step, so this only uploads the directory.
+#
+# One-time setup: repository Settings -> Pages -> Source -> "GitHub Actions".
+# Without that the deploy step fails with a 404.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  # So the site can be republished without an unrelated commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one part-way: a half-published
+# site is worse than a stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the pages are well-formed
+        run: |
+          python3 - <<'EOF'
+          import html.parser, pathlib, sys
+
+          VOID = {"meta", "link", "img", "br", "hr", "input", "source", "area"}
+
+          class Check(html.parser.HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.stack, self.problems = [], []
+              def handle_starttag(self, tag, attrs):
+                  if tag not in VOID:
+                      self.stack.append(tag)
+              def handle_endtag(self, tag):
+                  if tag in VOID:
+                      return
+                  if self.stack and self.stack[-1] == tag:
+                      self.stack.pop()
+                  else:
+                      self.problems.append(f"</{tag}> does not close <{self.stack[-1] if self.stack else 'nothing'}>")
+
+          failed = False
+          for page in sorted(pathlib.Path("docs").rglob("*.html")):
+              c = Check()
+              c.feed(page.read_text())
+              for p in c.problems:
+                  print(f"{page}: {p}")
+                  failed = True
+              if c.stack:
+                  print(f"{page}: unclosed at end of file: {c.stack}")
+                  failed = True
+          sys.exit(1 if failed else 0)
+          EOF
+
+      - name: Check for dead in-page links
+        run: |
+          python3 - <<'EOF'
+          import pathlib, re, sys
+
+          failed = False
+          for page in sorted(pathlib.Path("docs").rglob("*.html")):
+              text = page.read_text()
+              ids = set(re.findall(r'id="([^"]+)"', text))
+              for target in re.findall(r'href="#([^"]+)"', text):
+                  if target not in ids:
+                      print(f"{page}: #{target} has no matching id")
+                      failed = True
+              # Local assets referenced by the page must actually be there.
+              for ref in re.findall(r'(?:href|src)="(?!https?:|#|mailto:)([^"]+)"', text):
+                  if not (page.parent / ref).exists():
+                      print(f"{page}: missing local file {ref}")
+                      failed = True
+          sys.exit(1 if failed else 0)
+          EOF
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4

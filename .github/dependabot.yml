@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # ytmapi-rs is the one that matters: YouTube changes its internal API and
+  # the fix lands there first.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

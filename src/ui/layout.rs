@@ -120,10 +120,16 @@ pub fn compute_track_layout_with(
     let mut y = area.y + area.height.saturating_sub(content_h) / 2;
 
     let cover = if cover_h > 0 {
-        // Left-aligned with the rest of the column. Keeping one shared left
-        // edge matters more than centring the art within the column, and on a
-        // normal-sized terminal the cover fills the column anyway.
-        let r = Rect::new(x, y, cover_w, cover_h);
+        // Normally the art is exactly as wide as the column, so its left edge
+        // is the column's and everything lines up. A filled column is wider
+        // than the art, though, and pinning it left just leaves a gap beside
+        // it -- so centre it there.
+        let cover_x = if fill {
+            x + col_w.saturating_sub(cover_w) / 2
+        } else {
+            x
+        };
+        let r = Rect::new(cover_x, y, cover_w, cover_h);
         y += cover_h + 1;
         Some(r)
     } else {
@@ -440,6 +446,33 @@ mod tests {
         let mid = panes(130, 40, true).0.width;
         assert!(mid > narrow, "{mid} should exceed {narrow}");
         assert!(mid <= PLAYER_PANE_MAX);
+    }
+
+    #[test]
+    fn a_filled_column_centres_the_cover_over_the_text() {
+        // The split view's pane is wider than the art, and left-aligning it
+        // there leaves an obvious hole to its right.
+        let area = Rect::new(1, 3, 52, 30);
+        let l = compute_track_layout_with(area, (8, 16), 6, true, true);
+        let cover = l.cover.expect("cover expected");
+        assert!(
+            cover.width < l.meta.width,
+            "this test is meaningless unless the column is wider than the art"
+        );
+        let left = cover.x - l.meta.x;
+        let right = (l.meta.x + l.meta.width) - (cover.x + cover.width);
+        assert!(
+            left.abs_diff(right) <= 1,
+            "cover not centred: {left} left vs {right} right"
+        );
+    }
+
+    #[test]
+    fn an_unfilled_column_still_shares_the_covers_left_edge() {
+        // kew's arrangement, which the centred single-column view keeps.
+        let l = compute_track_layout_with(Rect::new(0, 0, 176, 43), (8, 16), 6, true, false);
+        let cover = l.cover.unwrap();
+        assert_eq!(l.meta.x, cover.x);
     }
 
     #[test]
