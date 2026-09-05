@@ -29,6 +29,15 @@ pub struct Visualizer {
     pub available: bool,
 }
 
+/// Take a lock, recovering it if a thread panicked while holding it.
+///
+/// The capture thread is best-effort by design -- if anything about it fails
+/// the visualizer just stays flat -- so a poisoned mutex should leave the
+/// spectrum stale, not take the player down with it.
+fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 impl Visualizer {
     /// Start capturing. Returns a disabled-but-harmless visualizer when the
     /// audio server or `pw-cat` is not there.
@@ -65,16 +74,15 @@ impl Visualizer {
             .stdin(Stdio::null())
             .spawn();
 
-        let mut proc = match spawned {
-            Ok(p) => p,
-            Err(_) => {
-                return Self {
-                    bands,
-                    running,
-                    child,
-                    available: false,
-                }
-            }
+        // No audio server, or pw-cat is not installed: the visualizer stays
+        // flat and everything else carries on.
+        let Ok(mut proc) = spawned else {
+            return Self {
+                bands,
+                running,
+                child,
+                available: false,
+            };
         };
 
         let Some(stdout) = proc.stdout.take() else {
@@ -85,7 +93,7 @@ impl Visualizer {
                 available: false,
             };
         };
-        *child.lock().unwrap() = Some(proc);
+        *lock(&child) = Some(proc);
 
         let bands_w = bands.clone();
         let running_w = running.clone();
@@ -106,7 +114,7 @@ impl Visualizer {
         if n == 0 {
             return Vec::new();
         }
-        let src = self.bands.lock().unwrap();
+        let src = lock(&self.bands);
         (0..n)
             .map(|i| {
                 // Average the slice of bands that maps onto this bar so wide
@@ -121,7 +129,7 @@ impl Visualizer {
 
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
-        if let Some(mut c) = self.child.lock().unwrap().take() {
+        if let Some(mut c) = lock(&self.child).take() {
             let _ = c.kill();
             let _ = c.wait();
         }

@@ -124,7 +124,45 @@ A few things that make a pull request easy to merge:
   the reasoning goes, and it is what the next person reads when they wonder
   why a line exists.
 
+## Formatting and lints
+
+Nothing here is hand-enforced. `rustfmt` is Rust's formatter -- the same role
+black plays in Python: official, opinionated, ships with the toolchain. Run
+it and clippy before you push; CI runs the same commands.
+
+```sh
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+cargo clippy --no-default-features --all-targets -- -D warnings
+cargo test
+```
+
+`rustfmt.toml` changes only the line width. The rest is rustfmt's defaults,
+deliberately: they are what every Rust project looks like, and diverging buys
+nothing.
+
+Lint levels live in `[lints]` in `Cargo.toml`, so `cargo clippy` behaves the
+same locally and in CI without anyone remembering flags. The ones worth
+knowing about:
+
+| Lint | Why |
+|---|---|
+| `clippy::unwrap_used` | A music player has no business panicking. Tests are exempt at the crate root, where asserting is the point. |
+| `unsafe_op_in_unsafe_fn` | `unsafe` is used deliberately in `art/terminal.rs` for termios and ioctl. Each block should say why; none should appear unnoticed. |
+| `unreachable_pub` | Keeps the public surface honest. |
+| `await_holding_lock` | The event loop is async and holds locks around IO; this catches the deadlock before it happens. |
+| `dbg_macro`, `todo` | Debugging leftovers. |
+
+The tree is kept at zero warnings under both feature configurations. The
+minimum supported Rust version is in `Cargo.toml` as `rust-version`; it
+tracks the floor the dependency tree already imposes rather than a number
+anyone picked.
+
 ## Conventions
+
+Naming is [RFC 430](https://rust-lang.github.io/rfcs/0430-finalizing-naming-conventions.html)
+and the compiler enforces it; idiom is whatever clippy accepts. The rest is
+this project's own, and worth knowing before you write much:
 
 **Comments explain why, not what.** The code already says what it does. A
 comment earns its place when it records a decision, a constraint, or a

@@ -204,7 +204,7 @@ pub fn extract(pixels: &[Rgb], k: usize) -> Palette {
     }
 
     let mut sorted = samples.clone();
-    sorted.sort_by(|a, b| a.luminance().partial_cmp(&b.luminance()).unwrap());
+    sorted.sort_by(|a, b| a.luminance().total_cmp(&b.luminance()));
     let mut centroids: Vec<Rgb> = (0..k)
         .map(|i| sorted[(i * (sorted.len() - 1)) / k.max(1)])
         .collect();
@@ -237,7 +237,7 @@ pub fn extract(pixels: &[Rgb], k: usize) -> Palette {
         }
     }
 
-    centroids.sort_by(|a, b| a.luminance().partial_cmp(&b.luminance()).unwrap());
+    centroids.sort_by(|a, b| a.luminance().total_cmp(&b.luminance()));
     let pick = |i: usize| centroids[i.min(centroids.len() - 1)];
     Palette {
         dark: pick(0),

@@ -21,14 +21,14 @@ use tokio::sync::{mpsc, RwLock};
 /// Property observation handles. Numbers are arbitrary but must be stable,
 /// since mpv echoes them back on every change.
 mod obs {
-    pub const TIME_POS: i64 = 1;
-    pub const DURATION: i64 = 2;
-    pub const PAUSE: i64 = 3;
-    pub const VOLUME: i64 = 4;
-    pub const CORE_IDLE: i64 = 5;
-    pub const IDLE_ACTIVE: i64 = 6;
-    pub const PLAYLIST_POS: i64 = 7;
-    pub const CACHE_WAIT: i64 = 8;
+    pub(super) const TIME_POS: i64 = 1;
+    pub(super) const DURATION: i64 = 2;
+    pub(super) const PAUSE: i64 = 3;
+    pub(super) const VOLUME: i64 = 4;
+    pub(super) const CORE_IDLE: i64 = 5;
+    pub(super) const IDLE_ACTIVE: i64 = 6;
+    pub(super) const PLAYLIST_POS: i64 = 7;
+    pub(super) const CACHE_WAIT: i64 = 8;
 }
 
 #[derive(Clone, Debug)]

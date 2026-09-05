@@ -24,6 +24,9 @@
 //! [`config::Action`]s, and [`ui::views::draw`] renders a frame from the
 //! current [`app::App`].
 
+// Tests assert; unwrapping there is the clearest way to say "this must hold".
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 pub mod api;
 pub mod app;
 pub mod art;

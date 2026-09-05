@@ -2,6 +2,9 @@
 name = "ytkew"
 version = "0.1.0"
 edition = "2021"
+# The floor the dependency tree already imposes -- ratatui and time both
+# require it -- not a number picked by hand. Packagers rely on this.
+rust-version = "1.88"
 description = "A terminal YouTube Music player, in the spirit of kew"
 repository = "https://github.com/dtDhruv/ytkew"
 readme = "README.md"
@@ -38,6 +41,28 @@ mpris-server = { version = "0.10", features = ["tokio"] }
 base64 = "0.23.1"
 png = "0.18.1"
 rusqlite = { version = "0.40", features = ["bundled"], optional = true }
+
+# Lint levels live here rather than in CLI flags, so `cargo clippy` locally
+# and in CI agree without anyone remembering the arguments. CI runs clippy
+# with -D warnings, which turns every one of these into an error there.
+[lints.rust]
+# unsafe is used deliberately in art/terminal.rs for termios and ioctl. Each
+# block should say why, and no new ones should appear unnoticed.
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+# A music player has no business panicking. Tests are exempt at the crate
+# root, where asserting is the point.
+unwrap_used = "warn"
+# Debugging leftovers.
+dbg_macro = "warn"
+todo = "warn"
+# Silent precision and sign surprises.
+cast_possible_truncation = "allow"  # pervasive and deliberate in the renderer
+# Correctness traps that are easy to write and hard to spot.
+await_holding_lock = "warn"
+manual_let_else = "warn"
 
 [profile.release]
 opt-level = 3
