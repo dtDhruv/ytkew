@@ -140,7 +140,9 @@ impl RootInterface for Imp {
     }
 
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {
-        Ok(vec!["https".into()])
+        // OpenUri is refused, so claiming a scheme here would invite calls
+        // that can only fail.
+        Ok(vec![])
     }
 
     async fn supported_mime_types(&self) -> fdo::Result<Vec<String>> {
@@ -354,12 +356,28 @@ impl Mpris {
     }
 }
 
+/// A D-Bus object path segment for a video id.
+///
+/// Object paths allow only `[A-Za-z0-9_]`, while video ids are base64url and
+/// so contain `-`. Hex-encoding keeps the id stable and collision-free; using
+/// the queue index instead would change a track's identity whenever the queue
+/// was reordered, which clients treat as a different track.
+fn track_path(video_id: &str) -> String {
+    let mut out = String::from("/org/mpris/MediaPlayer2/ytkew/track/x");
+    for b in video_id.as_bytes() {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
 /// Build MPRIS metadata for a track.
-pub fn metadata_for(track: &crate::model::Track, index: usize) -> Metadata {
+///
+/// `art` is a path to the cached cover. Desktop widgets fetch `mpris:artUrl`
+/// themselves and most only handle `file://`, so a remote URL would leave
+/// them showing no artwork at all.
+pub fn metadata_for(track: &crate::model::Track, art: Option<&std::path::Path>) -> Metadata {
     let mut m = Metadata::new();
-    // Track ids must be valid D-Bus object paths, so the queue index is used
-    // rather than the video id (which can contain '-' and '_').
-    if let Ok(id) = TrackId::try_from(format!("/org/mpris/MediaPlayer2/ytkew/track/{index}")) {
+    if let Ok(id) = TrackId::try_from(track_path(&track.video_id)) {
         m.set_trackid(Some(id));
     }
     m.set_title(Some(track.title.clone()));
@@ -372,8 +390,15 @@ pub fn metadata_for(track: &crate::model::Track, index: usize) -> Metadata {
     if let Some(d) = track.duration {
         m.set_length(Some(Time::from_micros((d * 1e6) as i64)));
     }
-    if let Some(art) = &track.thumbnail {
-        m.set_art_url(Some(art.clone()));
+    match art {
+        Some(path) => m.set_art_url(Some(format!("file://{}", path.display()))),
+        // Fall back to the remote URL; better than nothing for clients that
+        // can fetch it.
+        None => {
+            if let Some(url) = &track.thumbnail {
+                m.set_art_url(Some(url.clone()));
+            }
+        }
     }
     m.set_url(Some(track.url()));
     m
@@ -398,7 +423,7 @@ mod tests {
 
     #[test]
     fn metadata_carries_the_fields_desktops_display() {
-        let m = metadata_for(&track(), 3);
+        let m = metadata_for(&track(), None);
         assert_eq!(m.title(), Some("Creep"));
         assert_eq!(m.artist(), Some(vec!["Radiohead".to_string()]));
         assert_eq!(m.album(), Some("Pablo Honey"));
@@ -408,13 +433,41 @@ mod tests {
 
     #[test]
     fn track_id_is_a_valid_object_path_even_for_awkward_video_ids() {
-        // Video ids contain '-' and '_', which are not legal in object paths,
-        // so the id must be derived from the index instead.
-        let m = metadata_for(&track(), 7);
+        // "abc-123_x" contains characters object paths forbid.
+        let m = metadata_for(&track(), None);
         let id = m.trackid().expect("track id should be set");
+        let tail = id.as_str().rsplit('/').next().unwrap();
+        assert!(
+            tail.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+            "illegal object path segment: {tail}"
+        );
+    }
+
+    #[test]
+    fn track_ids_follow_the_track_not_its_queue_position() {
+        // Reordering the queue must not change a track's identity, or clients
+        // treat it as a different song.
+        let a = metadata_for(&track(), None).trackid().unwrap();
+        let b = metadata_for(&track(), None).trackid().unwrap();
+        assert_eq!(a.as_str(), b.as_str());
+
+        let other = Track {
+            video_id: "different".into(),
+            ..track()
+        };
+        assert_ne!(
+            metadata_for(&other, None).trackid().unwrap().as_str(),
+            a.as_str()
+        );
+    }
+
+    #[test]
+    fn a_cached_cover_is_offered_as_a_file_url() {
+        let path = std::path::Path::new("/home/u/.cache/ytkew/abc123");
+        let m = metadata_for(&track(), Some(path));
         assert_eq!(
-            id.as_str(),
-            "/org/mpris/MediaPlayer2/ytkew/track/7"
+            m.art_url().as_deref(),
+            Some("file:///home/u/.cache/ytkew/abc123")
         );
     }
 
@@ -425,7 +478,7 @@ mod tests {
             title: "Untitled".into(),
             ..Default::default()
         };
-        let m = metadata_for(&bare, 0);
+        let m = metadata_for(&bare, None);
         assert_eq!(m.title(), Some("Untitled"));
         assert_eq!(m.album(), None);
         assert_eq!(m.length(), None);

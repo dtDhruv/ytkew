@@ -321,6 +321,8 @@ pub struct App {
 
     /// Clickable regions from the last frame.
     pub hits: HitRegions,
+    /// A seek waiting to be announced on D-Bus at the next sync.
+    pending_seek: Option<f64>,
 
     /// Whether album art is showing. `b` toggles this; the renderer is a
     /// separate setting, so one key does one thing.
@@ -427,6 +429,7 @@ impl App {
             cell_source,
             mpris: None,
             hits: HitRegions::default(),
+            pending_seek: None,
             cover_visible: state_cover_visible,
             theme: active_theme,
             menu_open: false,
@@ -645,6 +648,12 @@ impl App {
     pub fn mpris_snapshot(&self) -> MprisState {
         use mpris_server::{LoopStatus, PlaybackStatus};
         let track = self.queue.current();
+        // Point clients at the cached file when it exists; most only handle
+        // file:// for artwork.
+        let art = track.and_then(|t| t.thumbnail.as_ref()).and_then(|url| {
+            let p = self.covers.cache_path(url);
+            p.exists().then_some(p)
+        });
         let status = match track {
             None => PlaybackStatus::Stopped,
             Some(_) if self.player_state.paused => PlaybackStatus::Paused,
@@ -653,9 +662,19 @@ impl App {
         MprisState {
             status,
             metadata: track
-                .map(|t| metadata_for(t, self.queue.current_index().unwrap_or(0)))
+                .map(|t| metadata_for(t, art.as_deref()))
                 .unwrap_or_default(),
-            track_key: track.map(|t| t.video_id.clone()).unwrap_or_default(),
+            // The art path is part of the key so metadata is republished once
+            // the cover finishes downloading, not just when the track changes.
+            track_key: track
+                .map(|t| {
+                    format!(
+                        "{}|{}",
+                        t.video_id,
+                        art.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
+                    )
+                })
+                .unwrap_or_default(),
             position: mpris_server::Time::from_micros(
                 (self.player_state.time_pos.max(0.0) * 1e6) as i64,
             ),
@@ -674,12 +693,22 @@ impl App {
         }
     }
 
+    /// Tell D-Bus clients the position jumped. Without this their progress
+    /// bars keep counting from where they last polled and drift out of step
+    /// after every seek.
+    fn announce_seek(&mut self, secs: f64) {
+        self.pending_seek = Some(secs.max(0.0));
+    }
+
     /// Push current state onto D-Bus. Cheap when nothing changed.
-    pub async fn sync_mpris(&self) {
+    pub async fn sync_mpris(&mut self) {
         let Some(m) = &self.mpris else { return };
         // Position is polled by clients, so update it without a signal.
         m.set_position(self.player_state.time_pos);
         m.publish(self.mpris_snapshot()).await;
+        if let Some(secs) = self.pending_seek.take() {
+            m.seeked(secs).await;
+        }
     }
 
     /// Route a mouse event to whatever was drawn under the pointer.
@@ -719,6 +748,7 @@ impl App {
                         .max(self.queue.current().and_then(|t| t.duration).unwrap_or(0.0));
                     if d > 0.0 {
                         self.player.seek_absolute(d * pct)?;
+                        self.announce_seek(d * pct);
                     }
                     return Ok(());
                 }
@@ -801,9 +831,7 @@ impl App {
             MprisCommand::Seek(secs) => self.player.seek(secs)?,
             MprisCommand::SetPosition(secs) => {
                 self.player.seek_absolute(secs)?;
-                if let Some(m) = &self.mpris {
-                    m.seeked(secs).await;
-                }
+                self.announce_seek(secs);
             }
             MprisCommand::SetVolume(fraction) => {
                 self.player.set_volume(fraction * 100.0).await?;
@@ -1365,8 +1393,14 @@ impl App {
             }
             Action::Next => self.next_track().await,
             Action::Prev => self.prev_track(),
-            Action::SeekForward => self.player.seek(self.cfg.seek_step)?,
-            Action::SeekBack => self.player.seek(-self.cfg.seek_step)?,
+            Action::SeekForward => {
+                self.player.seek(self.cfg.seek_step)?;
+                self.announce_seek(self.player_state.time_pos + self.cfg.seek_step);
+            }
+            Action::SeekBack => {
+                self.player.seek(-self.cfg.seek_step)?;
+                self.announce_seek(self.player_state.time_pos - self.cfg.seek_step);
+            }
             Action::VolumeUp => {
                 self.player.add_volume(self.cfg.volume_step).await?;
             }

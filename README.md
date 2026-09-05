@@ -119,6 +119,21 @@ ytkew --diagnose
 Reports which credential files are present and what each library endpoint
 returns, which separates "my library is empty" from "auth is broken".
 
+## Desktop integration
+
+ytkew exposes MPRIS on D-Bus, so media keys work and it appears in the
+GNOME/KDE now-playing panel with artwork, position and controls.
+
+For the panel to show a name and icon rather than a bare bus id, install the
+desktop entry:
+
+```sh
+install -Dm644 ytkew.desktop ~/.local/share/applications/ytkew.desktop
+```
+
+Artwork is offered as a `file://` URL into `~/.cache/ytkew/`, because most
+panels only fetch local files.
+
 ## Signing in
 
 **Search, radio, playlists by ID and lyrics need no credentials at all.** Only

@@ -65,7 +65,8 @@ impl CoverLoader {
         image::load_from_memory(&bytes).context("decoding cover art")
     }
 
-    fn cache_path(&self, url: &str) -> PathBuf {
+    /// Where a cover URL is cached on disk.
+    pub fn cache_path(&self, url: &str) -> PathBuf {
         let mut h = DefaultHasher::new();
         url.hash(&mut h);
         self.cache.join(format!("{:016x}", h.finish()))

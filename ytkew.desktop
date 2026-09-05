@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ytkew
+GenericName=Music Player
+Comment=A terminal YouTube Music player
+Exec=ytkew
+Icon=multimedia-audio-player
+Terminal=true
+Categories=AudioVideo;Audio;Player;
+Keywords=music;youtube;player;terminal;
