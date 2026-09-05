@@ -12,16 +12,30 @@
 
 use crate::model::{track_from_playlist_item, Track};
 use anyhow::{anyhow, Context, Result};
+use futures::stream::{Stream, StreamExt};
 use std::path::{Path, PathBuf};
 use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, VideoID};
 use ytmapi_rs::common::{LikeStatus, TextRun, YoutubeID};
+use ytmapi_rs::parse::{
+    LibraryArtist, LibraryPlaylist, PlaylistItem, SearchResultAlbum, TableListSong,
+};
+use ytmapi_rs::query::{
+    GetLibraryAlbumsQuery, GetLibraryArtistsQuery, GetLibraryPlaylistsQuery, GetLibrarySongsQuery,
+    GetPlaylistTracksQuery,
+};
 use ytmapi_rs::YtMusic;
 
 const NEEDS_AUTH: &str =
     "not signed in -- run `ytkew --auth cookie` or `ytkew --auth oauth` to reach your library";
 const OFFLINE: &str = "no connection to YouTube Music";
+
+/// Ceiling on the items a single paged query will pull. YouTube hands back
+/// roughly a hundred per page, so this allows about fifty round trips -- well
+/// past any real playlist, but bounded, because a continuation token that
+/// keeps pointing at more results would otherwise never stop.
+const MAX_ITEMS: usize = 5_000;
 
 enum Backend {
     /// Could not reach YouTube Music at startup. Every query fails with a
@@ -193,18 +207,46 @@ impl Api {
             .collect())
     }
 
+    /// Every track on a playlist, page by page.
+    ///
+    /// YouTube returns about a hundred tracks per response and a token for the
+    /// rest; `on_page` is called with each page as it arrives so a long
+    /// playlist fills in progressively instead of appearing all at once at the
+    /// end.
+    pub async fn playlist_tracks_paged(
+        &self,
+        playlist_id: &str,
+        mut on_page: impl FnMut(Vec<Track>),
+    ) -> Result<()> {
+        let query = GetPlaylistTracksQuery::new(PlaylistID::from_raw(browse_id(playlist_id)));
+        any_auth!(self, |yt| drain(
+            yt.stream(&query),
+            |page: Vec<PlaylistItem>| {
+                on_page(page.iter().filter_map(track_from_playlist_item).collect())
+            }
+        )
+        .await)
+    }
+
     pub async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
-        let id = PlaylistID::from_raw(browse_id(playlist_id));
-        let res = any_auth!(self, |yt| yt.get_playlist_tracks(id.clone()).await)?;
-        Ok(res.iter().filter_map(track_from_playlist_item).collect())
+        let mut out = Vec::new();
+        self.playlist_tracks_paged(playlist_id, |page| out.extend(page))
+            .await?;
+        Ok(out)
     }
 
     /// Songs you've liked in YouTube Music. This is the `LM` playlist, which
     /// is a different thing from `get_library_songs` (tracks explicitly added
     /// to your library) -- an account commonly has liked songs and no library
     /// songs at all.
+    pub async fn liked_songs_paged(&self, on_page: impl FnMut(Vec<Track>)) -> Result<()> {
+        self.playlist_tracks_paged("LM", on_page).await
+    }
+
     pub async fn liked_songs(&self) -> Result<Vec<Track>> {
-        self.playlist_tracks("LM").await
+        let mut out = Vec::new();
+        self.liked_songs_paged(|page| out.extend(page)).await?;
+        Ok(out)
     }
 
     /// YouTube's "start radio from this track" -- an endless-ish mix. This is
@@ -227,49 +269,106 @@ impl Api {
 
     // --- queries that need credentials -----------------------------------
 
+    pub async fn library_playlists_paged(
+        &self,
+        mut on_page: impl FnMut(Vec<Playlist>),
+    ) -> Result<()> {
+        let query = GetLibraryPlaylistsQuery;
+        let res = logged_in!(self, |yt| drain(
+            yt.stream(&query),
+            |page: Vec<LibraryPlaylist>| {
+                on_page(
+                    page.into_iter()
+                        .map(|p| Playlist {
+                            id: p.playlist_id.get_raw().to_string(),
+                            title: p.title,
+                            author: p.author,
+                            track_count: p.tracks,
+                        })
+                        .collect(),
+                )
+            }
+        )
+        .await);
+        ignore_missing_shelf(res)
+    }
+
     pub async fn library_playlists(&self) -> Result<Vec<Playlist>> {
-        let res = logged_in!(self, |yt| yt.get_library_playlists().await)?;
-        Ok(res
-            .into_iter()
-            .map(|p| Playlist {
-                id: p.playlist_id.get_raw().to_string(),
-                title: p.title,
-                author: p.author,
-                track_count: p.tracks,
-            })
-            .collect())
+        let mut out = Vec::new();
+        self.library_playlists_paged(|page| out.extend(page))
+            .await?;
+        Ok(out)
+    }
+
+    pub async fn library_songs_paged(&self, mut on_page: impl FnMut(Vec<Track>)) -> Result<()> {
+        let query = GetLibrarySongsQuery::default();
+        let res = logged_in!(self, |yt| drain(
+            yt.stream(&query),
+            |page: Vec<TableListSong>| on_page(page.iter().map(Track::from).collect())
+        )
+        .await);
+        ignore_missing_shelf(res)
     }
 
     pub async fn library_songs(&self) -> Result<Vec<Track>> {
-        let res = logged_in!(self, |yt| yt.get_library_songs().await);
-        Ok(empty_on_missing_shelf(res)?
-            .iter()
-            .map(Track::from)
-            .collect())
+        let mut out = Vec::new();
+        self.library_songs_paged(|page| out.extend(page)).await?;
+        Ok(out)
+    }
+
+    pub async fn library_albums_paged(&self, mut on_page: impl FnMut(Vec<AlbumRef>)) -> Result<()> {
+        let query = GetLibraryAlbumsQuery::default();
+        let res = logged_in!(self, |yt| drain(
+            yt.stream(&query),
+            |page: Vec<SearchResultAlbum>| {
+                on_page(
+                    page.into_iter()
+                        .map(|a| AlbumRef {
+                            id: a.album_id.get_raw().to_string(),
+                            title: a.title,
+                            year: a.year,
+                        })
+                        .collect(),
+                )
+            }
+        )
+        .await);
+        ignore_missing_shelf(res)
     }
 
     pub async fn library_albums(&self) -> Result<Vec<AlbumRef>> {
-        let res = logged_in!(self, |yt| yt.get_library_albums().await);
-        Ok(empty_on_missing_shelf(res)?
-            .into_iter()
-            .map(|a| AlbumRef {
-                id: a.album_id.get_raw().to_string(),
-                title: a.title,
-                year: a.year,
-            })
-            .collect())
+        let mut out = Vec::new();
+        self.library_albums_paged(|page| out.extend(page)).await?;
+        Ok(out)
+    }
+
+    pub async fn library_artists_paged(
+        &self,
+        mut on_page: impl FnMut(Vec<ArtistRef>),
+    ) -> Result<()> {
+        let query = GetLibraryArtistsQuery::default();
+        let res = logged_in!(self, |yt| drain(
+            yt.stream(&query),
+            |page: Vec<LibraryArtist>| {
+                on_page(
+                    page.into_iter()
+                        .map(|a| ArtistRef {
+                            channel_id: a.channel_id.get_raw().to_string(),
+                            name: a.artist,
+                            subtitle: a.byline,
+                        })
+                        .collect(),
+                )
+            }
+        )
+        .await);
+        ignore_missing_shelf(res)
     }
 
     pub async fn library_artists(&self) -> Result<Vec<ArtistRef>> {
-        let res = logged_in!(self, |yt| yt.get_library_artists().await)?;
-        Ok(res
-            .into_iter()
-            .map(|a| ArtistRef {
-                channel_id: a.channel_id.get_raw().to_string(),
-                name: a.artist,
-                subtitle: a.byline,
-            })
-            .collect())
+        let mut out = Vec::new();
+        self.library_artists_paged(|page| out.extend(page)).await?;
+        Ok(out)
     }
 
     /// An artist's albums and singles, as shown on their YouTube Music page.
@@ -359,22 +458,68 @@ fn browse_id(playlist_id: &str) -> String {
     }
 }
 
+/// Walk every page of a continuation stream, handing each to `on_page` as it
+/// lands so callers can show early results rather than waiting for the whole
+/// fetch.
+///
+/// Once one page has succeeded a later failure ends the walk quietly. A
+/// truncated playlist beats throwing away everything already retrieved
+/// because one request deep into a long fetch timed out.
+async fn drain<S, T, E>(stream: S, mut on_page: impl FnMut(Vec<T>)) -> Result<()>
+where
+    S: Stream<Item = std::result::Result<Vec<T>, E>>,
+    E: std::fmt::Display,
+{
+    let mut stream = std::pin::pin!(stream);
+    let mut pages = 0usize;
+    let mut taken = 0usize;
+    while let Some(page) = stream.next().await {
+        let mut items = match page {
+            Ok(items) => items,
+            Err(e) if pages == 0 => return Err(anyhow!(e.to_string())),
+            Err(_) => break,
+        };
+        pages += 1;
+        items.truncate(MAX_ITEMS - taken);
+        taken += items.len();
+        if !items.is_empty() {
+            on_page(items);
+        }
+        if taken >= MAX_ITEMS {
+            break;
+        }
+    }
+    Ok(())
+}
+
 /// An empty library section makes YouTube omit the shelf entirely, which
 /// ytmapi-rs reports as a missing-key parse error. Treat that specific shape
 /// as "nothing here" rather than showing the user a raw JSON path.
+fn is_missing_shelf(msg: &str) -> bool {
+    msg.contains("not found in Api response")
+        && (msg.contains("musicShelfRenderer") || msg.contains("gridRenderer"))
+}
+
 fn empty_on_missing_shelf<T: Default>(res: Result<T, ytmapi_rs::Error>) -> Result<T> {
     match res {
         Ok(v) => Ok(v),
         Err(e) => {
             let msg = e.to_string();
-            if msg.contains("not found in Api response")
-                && (msg.contains("musicShelfRenderer") || msg.contains("gridRenderer"))
-            {
+            if is_missing_shelf(&msg) {
                 Ok(T::default())
             } else {
                 Err(anyhow!(msg))
             }
         }
+    }
+}
+
+/// The paged equivalent: an absent shelf means the section is empty, not that
+/// the fetch failed.
+fn ignore_missing_shelf(res: Result<()>) -> Result<()> {
+    match res {
+        Err(e) if is_missing_shelf(&e.to_string()) => Ok(()),
+        other => other,
     }
 }
 
@@ -394,6 +539,76 @@ pub fn cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stream of canned pages, standing in for YouTube's continuations.
+    fn pages<T: Clone>(
+        pages: Vec<std::result::Result<Vec<T>, &'static str>>,
+    ) -> impl Stream<Item = std::result::Result<Vec<T>, &'static str>> {
+        futures::stream::iter(pages)
+    }
+
+    #[tokio::test]
+    async fn every_page_is_delivered_in_order() {
+        let mut seen = Vec::new();
+        drain(
+            pages(vec![Ok(vec![1, 2]), Ok(vec![3]), Ok(vec![4, 5])]),
+            |p| seen.push(p),
+        )
+        .await
+        .unwrap();
+        assert_eq!(seen, vec![vec![1, 2], vec![3], vec![4, 5]]);
+    }
+
+    #[tokio::test]
+    async fn a_single_page_is_not_treated_as_truncated() {
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        drain(pages(vec![Ok(vec![1, 2, 3])]), |p| seen.push(p))
+            .await
+            .unwrap();
+        assert_eq!(seen, vec![vec![1, 2, 3]]);
+    }
+
+    #[tokio::test]
+    async fn an_empty_result_yields_no_pages_but_still_succeeds() {
+        let mut calls = 0;
+        drain(pages::<u8>(vec![Ok(Vec::new())]), |_| calls += 1)
+            .await
+            .unwrap();
+        assert_eq!(calls, 0, "an empty page is not worth forwarding");
+    }
+
+    #[tokio::test]
+    async fn a_failure_on_the_first_page_is_an_error() {
+        let mut calls = 0;
+        let e = drain(pages::<u8>(vec![Err("boom")]), |_| calls += 1)
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("boom"), "got {e}");
+        assert_eq!(calls, 0);
+    }
+
+    #[tokio::test]
+    async fn a_failure_later_keeps_what_already_arrived() {
+        let mut seen = Vec::new();
+        // Losing a whole playlist to one hiccup deep in the fetch is worse
+        // than returning the part that did arrive.
+        drain(
+            pages(vec![Ok(vec![1, 2]), Err("timeout"), Ok(vec![9])]),
+            |p| seen.push(p),
+        )
+        .await
+        .unwrap();
+        assert_eq!(seen, vec![vec![1, 2]]);
+    }
+
+    #[tokio::test]
+    async fn the_item_cap_bounds_a_runaway_continuation() {
+        let page: Vec<u8> = vec![0; 1000];
+        let endless = std::iter::repeat_n(Ok(page), 100).collect();
+        let mut total = 0usize;
+        drain(pages(endless), |p| total += p.len()).await.unwrap();
+        assert_eq!(total, MAX_ITEMS);
+    }
 
     #[test]
     fn playlist_ids_get_the_vl_browse_prefix() {

@@ -40,11 +40,17 @@ use tokio::sync::mpsc;
 /// Results of background work, delivered back to the single-threaded UI.
 pub enum AppMsg {
     SearchResults(Vec<Track>),
-    /// Children for the node at `path`. Addressed by path so a slow response
-    /// cannot land on the wrong node after the user navigates away.
+    /// One page of children for the node at `path`. Addressed by path so a
+    /// slow response cannot land on the wrong node after the user navigates
+    /// away.
     LibChildren {
         path: Vec<usize>,
         children: Vec<LibKind>,
+        /// The first page replaces the node's children; later pages append.
+        first: bool,
+        /// The fetch is finished. Always arrives, even when no page did, so a
+        /// node can never be left spinning.
+        last: bool,
     },
     LibFailed {
         path: Vec<usize>,
@@ -140,6 +146,9 @@ pub struct App {
     /// A library node whose children were requested so its whole contents
     /// could be played once they arrive.
     pending_play: Option<Vec<usize>>,
+    /// Node whose still-arriving pages should extend the queue, set when a
+    /// "play all" starts on the first page of a multi-page fetch.
+    queue_feed: Option<Vec<usize>>,
     /// Which graphics protocol to draw the cover with, if any.
     graphics: Graphics,
     /// A region just blanked, which the next frame must treat as empty so
@@ -239,6 +248,7 @@ impl App {
             menu_screen: MenuScreen::Main,
             option_sel: 0,
             pending_play: None,
+            queue_feed: None,
             graphics: cfg_graphics,
             art_on_screen: None,
             stale_cover: None,
@@ -305,6 +315,8 @@ impl App {
             self.notify("nothing to play");
             return;
         }
+        // Whatever was feeding the old queue no longer applies.
+        self.queue_feed = None;
         self.queue.replace(tracks, start);
         self.start_current();
     }
@@ -434,28 +446,64 @@ impl App {
                 }
                 self.search_results = tracks;
             }
-            AppMsg::LibChildren { path, children } => {
-                if let Some(node) = self.node_at_mut(&path) {
-                    node.loading = false;
+            AppMsg::LibChildren {
+                path,
+                children,
+                first,
+                last,
+            } => {
+                let page: Vec<Track> = children
+                    .iter()
+                    .filter_map(|c| match c {
+                        LibKind::Song(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                let Some(node) = self.node_at_mut(&path) else {
+                    // The user collapsed or replaced the node mid-fetch.
+                    return;
+                };
+                if first {
+                    node.children.clear();
                     node.loaded = true;
                     node.expanded = true;
-                    node.children = children.into_iter().map(LibNode::new).collect();
                 }
+                node.children.extend(children.into_iter().map(LibNode::new));
+                // Keep the spinner until the last page, so a partly filled
+                // list does not look finished.
+                node.loading = !last;
                 self.rebuild_library_rows();
-                // A "play all" that was waiting on this fetch.
+
                 if self.pending_play.as_deref() == Some(path.as_slice()) {
-                    self.pending_play = None;
+                    // Start on the first page that has anything playable
+                    // rather than waiting for a long fetch to finish.
                     let tracks = self.songs_under(&path);
-                    if tracks.is_empty() {
-                        self.notify("nothing playable here");
-                    } else {
+                    if !tracks.is_empty() {
+                        self.pending_play = None;
                         self.play_all(tracks, 0);
+                        self.queue_feed = (!last).then(|| path.clone());
+                    } else if last {
+                        self.pending_play = None;
+                        self.notify("nothing playable here");
+                    }
+                } else if self.queue_feed.as_deref() == Some(path.as_slice()) {
+                    if !page.is_empty() {
+                        self.queue.extend(page);
+                        // The queue may have just gained a next track where it
+                        // had none, so mpv needs to hear about it.
+                        self.prefetch_next();
+                    }
+                    if last {
+                        self.queue_feed = None;
                     }
                 }
             }
             AppMsg::LibFailed { path, error } => {
                 if self.pending_play.as_deref() == Some(path.as_slice()) {
                     self.pending_play = None;
+                }
+                if self.queue_feed.as_deref() == Some(path.as_slice()) {
+                    self.queue_feed = None;
                 }
                 if let Some(node) = self.node_at_mut(&path) {
                     node.loading = false;

@@ -236,47 +236,80 @@ impl App {
     }
 
     /// Fetch a node's children off-thread, replying with its path.
+    ///
+    /// Playlists and library sections arrive a page at a time and are
+    /// forwarded as they land, so a few thousand tracks show their first
+    /// hundred immediately instead of after every round trip has finished.
     pub(crate) fn spawn_library_load(&self, path: Vec<usize>, kind: LibKind) {
         let api = self.api.clone();
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            let result: Result<Vec<LibKind>> = match &kind {
-                LibKind::LikedMusic => api
-                    .liked_songs()
+            let mut sent = 0usize;
+            let mut send = |children: Vec<LibKind>| {
+                let msg = AppMsg::LibChildren {
+                    path: path.clone(),
+                    children,
+                    first: sent == 0,
+                    last: false,
+                };
+                sent += 1;
+                let _ = tx.send(msg);
+            };
+
+            let result: Result<()> = match &kind {
+                LibKind::LikedMusic => {
+                    api.liked_songs_paged(|t| send(t.into_iter().map(LibKind::Song).collect()))
+                        .await
+                }
+                LibKind::LibrarySongs => {
+                    api.library_songs_paged(|t| send(t.into_iter().map(LibKind::Song).collect()))
+                        .await
+                }
+                LibKind::PlaylistsFolder => {
+                    api.library_playlists_paged(|p| {
+                        send(p.into_iter().map(LibKind::Playlist).collect())
+                    })
                     .await
-                    .map(|t| t.into_iter().map(LibKind::Song).collect()),
-                LibKind::LibrarySongs => api
-                    .library_songs()
+                }
+                LibKind::ArtistsFolder => {
+                    api.library_artists_paged(|a| {
+                        send(a.into_iter().map(LibKind::Artist).collect())
+                    })
                     .await
-                    .map(|t| t.into_iter().map(LibKind::Song).collect()),
-                LibKind::PlaylistsFolder => api
-                    .library_playlists()
+                }
+                LibKind::AlbumsFolder => {
+                    api.library_albums_paged(|a| send(a.into_iter().map(LibKind::Album).collect()))
+                        .await
+                }
+                LibKind::Playlist(p) => {
+                    api.playlist_tracks_paged(&p.id, |t| {
+                        send(t.into_iter().map(LibKind::Song).collect())
+                    })
                     .await
-                    .map(|p| p.into_iter().map(LibKind::Playlist).collect()),
-                LibKind::ArtistsFolder => api
-                    .library_artists()
-                    .await
-                    .map(|a| a.into_iter().map(LibKind::Artist).collect()),
-                LibKind::AlbumsFolder => api
-                    .library_albums()
-                    .await
-                    .map(|a| a.into_iter().map(LibKind::Album).collect()),
-                LibKind::Playlist(p) => api
-                    .playlist_tracks(&p.id)
-                    .await
-                    .map(|t| t.into_iter().map(LibKind::Song).collect()),
+                }
+                // Artist pages and albums come back whole; there is nothing
+                // to page through.
                 LibKind::Artist(a) => api
                     .artist_albums(&a.channel_id)
                     .await
-                    .map(|al| al.into_iter().map(LibKind::Album).collect()),
+                    .map(|al| send(al.into_iter().map(LibKind::Album).collect())),
                 LibKind::Album(a) => api
                     .album_tracks(&a.id)
                     .await
-                    .map(|t| t.into_iter().map(LibKind::Song).collect()),
-                LibKind::Song(_) => Ok(Vec::new()),
+                    .map(|t| send(t.into_iter().map(LibKind::Song).collect())),
+                LibKind::Song(_) => Ok(()),
             };
+
             let msg = match result {
-                Ok(children) => AppMsg::LibChildren { path, children },
+                // Always close the fetch, even if no page arrived: this is
+                // what clears the node's loading flag and what tells an empty
+                // section it really is empty.
+                Ok(()) => AppMsg::LibChildren {
+                    path,
+                    children: Vec::new(),
+                    first: sent == 0,
+                    last: true,
+                },
                 Err(e) => AppMsg::LibFailed {
                     path,
                     error: format!("load failed: {e}"),

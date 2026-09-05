@@ -249,10 +249,16 @@ impl App {
                 self.announce_seek(self.player_state.time_pos - self.cfg.seek_step);
             }
             Action::VolumeUp => {
-                self.player.add_volume(self.cfg.volume_step).await?;
+                let v = self.player.add_volume(self.cfg.volume_step).await?;
+                self.notify(format!("volume {}%", v.round() as i64));
             }
             Action::VolumeDown => {
-                self.player.add_volume(-self.cfg.volume_step).await?;
+                let v = self.player.add_volume(-self.cfg.volume_step).await?;
+                self.notify(if v <= 0.0 {
+                    "volume 0% -- muted".to_string()
+                } else {
+                    format!("volume {}%", v.round() as i64)
+                });
             }
             Action::Shuffle => {
                 let on = self.queue.toggle_shuffle();
@@ -317,6 +323,9 @@ impl App {
             Action::EnqueueAndPlay => self.activate_selection(true),
             Action::Remove => self.remove_selection(),
             Action::ClearQueue => {
+                // Stop a still-arriving playlist from refilling what was just
+                // cleared.
+                self.queue_feed = None;
                 self.queue.clear();
                 let _ = self.player.stop();
                 let _ = self.player.clear_playlist();

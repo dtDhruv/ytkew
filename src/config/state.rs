@@ -39,17 +39,27 @@ impl Default for State {
 
 impl State {
     pub fn load(dir: &Path, cfg: &Config) -> Self {
-        match std::fs::read_to_string(dir.join("state.toml")) {
-            Ok(raw) => toml::from_str(&raw).unwrap_or_else(|_| State {
-                volume: cfg.initial_volume,
-                ..Default::default()
-            }),
-            // First run: take the volume the config asks for.
-            Err(_) => State {
-                volume: cfg.initial_volume,
-                ..Default::default()
-            },
+        // First run, or a file we cannot parse: take the volume the config
+        // asks for.
+        let fresh = || State {
+            volume: cfg.initial_volume,
+            ..Default::default()
+        };
+        let mut state = match std::fs::read_to_string(dir.join("state.toml")) {
+            Ok(raw) => toml::from_str(&raw).unwrap_or_else(|_| fresh()),
+            Err(_) => fresh(),
+        };
+        // Never start silent because of a saved zero. It is nearly always a
+        // stray keypress before quitting, and it presents as a player that
+        // looks like it is working but makes no sound -- with nothing on
+        // screen to explain why.
+        if state.volume <= 0.0 {
+            state.volume = cfg.initial_volume;
         }
+        // The ceiling matches what the player accepts, so a boosted volume
+        // survives a restart.
+        state.volume = state.volume.clamp(0.0, 130.0);
+        state
     }
 
     pub fn save(&self, dir: &Path) -> anyhow::Result<()> {
@@ -92,6 +102,42 @@ mod tests {
         assert_eq!(back.cover_cell, [12, 24], "tuned cell size must persist");
         assert!(!back.cover_visible, "the b toggle must persist");
         assert_eq!(back.theme, "nord", "the chosen theme must persist");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_saved_zero_volume_does_not_come_back_silent() {
+        let dir = std::env::temp_dir().join(format!("ytkew-mute-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = Config {
+            initial_volume: 80.0,
+            ..Config::default()
+        };
+        State {
+            volume: 0.0,
+            ..Default::default()
+        }
+        .save(&dir)
+        .unwrap();
+        assert_eq!(State::load(&dir, &cfg).volume, 80.0);
+
+        // A nonsense value from a hand-edited file is clamped, not obeyed.
+        State {
+            volume: 900.0,
+            ..Default::default()
+        }
+        .save(&dir)
+        .unwrap();
+        assert_eq!(State::load(&dir, &cfg).volume, 130.0);
+
+        // A deliberate boost is left alone.
+        State {
+            volume: 120.0,
+            ..Default::default()
+        }
+        .save(&dir)
+        .unwrap();
+        assert_eq!(State::load(&dir, &cfg).volume, 120.0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

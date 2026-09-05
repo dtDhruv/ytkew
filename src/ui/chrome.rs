@@ -107,11 +107,41 @@ fn status_spans<'a>(
         }
         crate::queue::RepeatMode::Off => {}
     }
+    let vol = app.player_state.volume.round().max(0.0) as i64;
+    right.push(Span::styled("vol ", Style::default().fg(faint)));
     right.push(Span::styled(
-        format!("vol {}% ", app.player_state.volume.round() as i64),
-        Style::default().fg(dim),
+        volume_meter(vol),
+        Style::default().fg(if vol == 0 { accent } else { dim }),
     ));
+    // Silence is worth shouting about: without this the app looks like it is
+    // playing normally while making no sound at all.
+    if vol == 0 {
+        right.push(Span::styled(
+            " muted ",
+            Style::default()
+                .fg(accent)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        ));
+    } else {
+        right.push(Span::styled(format!(" {vol}% "), Style::default().fg(dim)));
+    }
     right
+}
+
+/// A five-cell bar for the volume, so its level reads at a glance instead of
+/// hiding in a number.
+fn volume_meter(vol: i64) -> String {
+    const CELLS: i64 = 5;
+    // mpv allows boosting past 100%; the bar just tops out.
+    let filled = (vol.min(100) * CELLS).div_euclid(100);
+    // Anything audible keeps at least one cell lit, so "quiet" never looks
+    // the same as "silent".
+    let filled = if vol > 0 { filled.max(1) } else { 0 };
+    let mut bar = String::new();
+    for i in 0..CELLS {
+        bar.push(if i < filled { '▪' } else { '▫' });
+    }
+    bar
 }
 
 /// The always-visible now-playing bar, like the one every graphical player
@@ -301,6 +331,22 @@ pub(super) fn tab_rule(width: usize, active_start: usize, active_end: usize) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_volume_meter_fills_with_the_level() {
+        assert_eq!(volume_meter(0), "▫▫▫▫▫");
+        assert_eq!(volume_meter(100), "▪▪▪▪▪");
+        assert_eq!(volume_meter(60), "▪▪▪▫▫");
+        // Boosting past 100% tops the bar out rather than overflowing it.
+        assert_eq!(volume_meter(130), "▪▪▪▪▪");
+    }
+
+    #[test]
+    fn quiet_never_looks_like_silent() {
+        // 5% rounds down to zero cells, but silence has to stay distinct.
+        assert_eq!(volume_meter(5), "▪▫▫▫▫");
+        assert_ne!(volume_meter(1), volume_meter(0));
+    }
 
     #[test]
     fn the_tab_rule_breaks_around_the_active_tab() {

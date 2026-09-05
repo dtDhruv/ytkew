@@ -105,6 +105,13 @@ pub async fn run(cli: Cli) -> Result<()> {
         // Pull the latest transport state before drawing so the progress bar
         // and clock never lag a frame behind.
         app.player_state = app.player.state().await;
+        // Take the cover off screen before drawing anything that has to appear
+        // over it. A pixel image is not part of the cell grid, so this has to
+        // happen ahead of the frame -- blanking afterwards would erase what
+        // was just drawn.
+        if !(app.view == ui::View::Track && app.graphics_active()) {
+            app.clear_cover_art();
+        }
         // draw records the regions a click can land on, so it needs &mut.
         let frame_area = match terminal.draw(|f| ui::views::draw(f, &mut app)) {
             Ok(completed) => completed.area,
@@ -113,7 +120,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         // Pixel graphics live outside ratatui's model, so the cover is written
         // after the frame, into cells the renderer deliberately skipped.
         if app.view == ui::View::Track && app.graphics_active() {
-            if let Some(rect) = ui::layout::cover_rect(ui::layout::body_rect(frame_area), &app) {
+            if let Some(rect) =
+                ui::layout::cover_rect(ui::layout::body_rect(frame_area, &app), &app)
+            {
                 if let Err(e) = app.paint_graphics(rect) {
                     app.notify(format!("cover: {e}"));
                 }

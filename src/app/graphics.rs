@@ -135,8 +135,16 @@ impl App {
 
     /// True when the cover is drawn by a graphics protocol rather than into
     /// ratatui's buffer. Requires a loaded image -- there is no placeholder.
+    ///
+    /// An open overlay turns this off. A pixel image is not part of the cell
+    /// grid, so nothing drawn into ratatui's buffer can cover it: the menu
+    /// would render underneath. Falling back to block art for as long as the
+    /// overlay is up keeps the cover visible and lets the menu sit on top.
     pub fn graphics_active(&self) -> bool {
-        self.cover_visible && self.graphics != Graphics::None && self.cover.is_some()
+        self.cover_visible
+            && self.graphics != Graphics::None
+            && self.cover.is_some()
+            && !self.menu_open
     }
 
     /// Take the region that was blanked, if any, so the renderer can reset
@@ -209,6 +217,17 @@ impl App {
         };
 
         let mut out = std::io::stdout().lock();
+        // Clear the box before drawing into it. Both protocols keep the
+        // image's aspect ratio, so it rarely fills the reserved cells exactly,
+        // and the leftover margin is skipped by ratatui's diff -- whatever the
+        // previous view left there would otherwise show through beside the
+        // cover.
+        out.write_all(blank_region(rect).as_bytes())?;
+        if self.graphics == Graphics::Kitty {
+            // Placements are terminal-side objects keyed by id, so drop the
+            // old one rather than stacking a second on top of it.
+            out.write_all(crate::art::kitty::delete().as_bytes())?;
+        }
         // Both protocols draw from the cursor, so park it at the top-left of
         // the reserved area. Rows and columns are 1-based in CUP.
         write!(out, "\x1b[{};{}H", rect.y + 1, rect.x + 1)?;
@@ -243,11 +262,48 @@ impl App {
         }
         // Blank the cells the image covered, and tell ratatui they are blank
         // so its next diff agrees with what is actually on screen.
-        let blanks = " ".repeat(rect.width as usize);
-        for row in 0..rect.height {
-            let _ = write!(out, "\x1b[{};{}H{}", rect.y + row + 1, rect.x + 1, blanks);
-        }
+        let _ = out.write_all(blank_region(rect).as_bytes());
         let _ = out.flush();
         self.stale_cover = Some(rect);
+    }
+}
+
+/// Cursor-addressed spaces covering every cell of `rect`.
+///
+/// Used wherever the cell grid and the terminal have to be brought back into
+/// agreement by hand, because ratatui's diff will not do it for cells that
+/// were reserved for pixel graphics.
+fn blank_region(rect: ratatui::layout::Rect) -> String {
+    let blanks = " ".repeat(rect.width as usize);
+    let mut out = String::new();
+    for row in 0..rect.height {
+        // CUP is 1-based.
+        out.push_str(&format!(
+            "\x1b[{};{}H{}",
+            rect.y + row + 1,
+            rect.x + 1,
+            blanks
+        ));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::blank_region;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn blanking_covers_every_reserved_cell() {
+        let out = blank_region(Rect::new(4, 2, 3, 2));
+        // One cursor move per row, 1-based, each followed by a full row of
+        // spaces.
+        assert_eq!(out, "\x1b[3;5H   \x1b[4;5H   ");
+    }
+
+    #[test]
+    fn an_empty_region_emits_nothing() {
+        assert!(blank_region(Rect::new(0, 0, 0, 0)).is_empty());
+        assert!(blank_region(Rect::new(1, 1, 8, 0)).is_empty());
     }
 }

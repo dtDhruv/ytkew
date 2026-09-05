@@ -148,14 +148,17 @@ pub fn cover_rect(area: Rect, app: &App) -> Option<Rect> {
 }
 
 /// The region between the tab strip and the footer.
-pub fn body_rect(area: Rect) -> Rect {
-    // Callers that only have the frame use the two-row footer, which is the
-    // larger of the two; a one-row difference does not move the cover.
+///
+/// Takes the app rather than assuming a footer height: the track view has a
+/// one-row footer and every other view has two, and the layout centres its
+/// content vertically, so guessing wrong shifts the cover by a row -- enough
+/// for the reserved cells and the image drawn over them to disagree.
+pub fn body_rect(area: Rect, app: &App) -> Rect {
     Rect::new(
         area.x,
         area.y + TABBAR_ROWS,
         area.width,
-        area.height.saturating_sub(TABBAR_ROWS + 2),
+        area.height.saturating_sub(TABBAR_ROWS + footer_rows(app)),
     )
 }
 
@@ -286,6 +289,33 @@ mod tests {
         assert!(l.meta.x > 0, "should be indented, not flush left");
         let right_gap = 120 - (l.meta.x + l.meta.width);
         assert!(l.meta.x.abs_diff(right_gap) <= 1);
+    }
+
+    #[test]
+    fn the_footer_height_changes_where_the_cover_sits() {
+        // The regression this guards: assuming a two-row footer on the track
+        // view moved the painted image one row off the reserved cells, and
+        // the gap showed the previous view's text.
+        let frame = Rect::new(0, 0, 100, 34);
+        let one = Rect::new(
+            frame.x,
+            frame.y + TABBAR_ROWS,
+            frame.width,
+            frame.height - TABBAR_ROWS - 1,
+        );
+        let two = Rect::new(
+            frame.x,
+            frame.y + TABBAR_ROWS,
+            frame.width,
+            frame.height - TABBAR_ROWS - 2,
+        );
+        let a = compute_track_layout(track_inner(one), (8, 16), 6, true);
+        let b = compute_track_layout(track_inner(two), (8, 16), 6, true);
+        assert_ne!(
+            a.cover.unwrap().y,
+            b.cover.unwrap().y,
+            "a one-row difference does move the cover"
+        );
     }
 
     #[test]

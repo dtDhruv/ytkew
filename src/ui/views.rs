@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::ui::chrome::{draw_footer, draw_player_bar, draw_tabbar};
-use crate::ui::layout::{footer_rows, TABBAR_ROWS};
+use crate::ui::layout::{body_rect, footer_rows, TABBAR_ROWS};
 use crate::ui::lists::{draw_library, draw_queue, draw_search};
 use crate::ui::overlay::{draw_help, draw_lyrics, draw_menu};
 use crate::ui::track::draw_track;
@@ -54,12 +54,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     let foot_h = footer_rows(app);
     let tabbar = Rect::new(area.x, area.y, area.width, TABBAR_ROWS);
-    let body = Rect::new(
-        area.x,
-        area.y + TABBAR_ROWS,
-        area.width,
-        area.height.saturating_sub(TABBAR_ROWS + foot_h),
-    );
+    // Shared with the graphics painter so the reserved cells and the image
+    // written over them always land on the same rows.
+    let body = body_rect(area, app);
     let footer = Rect::new(area.x, area.y + area.height - foot_h, area.width, foot_h);
 
     draw_tabbar(f, tabbar, app);
