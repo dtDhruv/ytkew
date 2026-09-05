@@ -41,6 +41,19 @@ ytkew plays music from your YouTube Music account without a browser. It takes
 its interface and keybindings from kew, and hands playback to **mpv**, so a
 slow redraw can never stutter the audio.
 
+## Install
+
+```sh
+cargo install ytkew
+ytkew --install-desktop-entry     # launcher entry and icon
+```
+
+Or from source, which does both in one step:
+
+```sh
+git clone https://github.com/dtDhruv/ytkew && cd ytkew && make install
+```
+
 ## Documentation
 
 Everything — installing, signing in, every key, themes, configuration and

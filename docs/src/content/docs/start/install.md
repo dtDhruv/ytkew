@@ -100,11 +100,20 @@ cargo build --release
 install -Dm755 target/release/ytkew ~/.local/bin/ytkew
 ```
 
-:::note
-`cargo install` places only the binary, so ytkew will show a generic icon in
-your launcher and in the now-playing panel. `make install` is what puts the
-real one in place.
-:::
+### From crates.io
+
+```sh
+cargo install ytkew
+ytkew --install-desktop-entry
+```
+
+`cargo install` copies the executable and nothing else, so without that
+second line ytkew shows a generic icon in your launcher and a bare bus id in
+the now-playing panel. The binary carries the entry and icon inside itself
+and writes them to `~/.local/share` when you ask.
+
+`ytkew --uninstall-desktop-entry` takes them away again, and
+`ytkew --diagnose` says which state you are in.
 
 ## 3. Build features
 

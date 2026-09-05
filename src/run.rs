@@ -30,6 +30,9 @@ pub async fn run(cli: Cli) -> Result<()> {
     if cli.diagnose {
         return run_diagnose(&cfg_dir).await;
     }
+    if cli.install_desktop_entry || cli.uninstall_desktop_entry {
+        return crate::cli::run_desktop_entry(cli.install_desktop_entry);
+    }
 
     let cfg = config::Config::load(&cfg_dir);
     // Drop a commented default on first run; never overwrite an existing one.

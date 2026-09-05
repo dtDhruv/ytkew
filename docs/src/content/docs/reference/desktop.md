@@ -15,13 +15,18 @@ panels only fetch local files.
 
 ## The desktop entry
 
-`make install` puts the desktop entry and icon in place, which is what gives
-the panel a name and picture rather than a bare bus id. Installing only the
-binary leaves it showing a generic terminal icon.
+The panel shows a name and picture instead of a bare bus id only once the
+desktop entry and icon are installed. Either of these does it:
 
 ```sh
-make install
+make install                      # building from source
+ytkew --install-desktop-entry     # after `cargo install ytkew`
 ```
+
+The second exists because `cargo install` copies the executable and nothing
+else. ytkew carries both files inside the binary and writes them to
+`~/.local/share`, honouring `XDG_DATA_HOME`. `--uninstall-desktop-entry`
+removes them, and `--diagnose` reports which state you are in.
 
 To do it by hand:
 

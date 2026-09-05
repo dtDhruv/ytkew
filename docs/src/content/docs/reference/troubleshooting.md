@@ -34,6 +34,7 @@ whether those files exist.
 | Library is empty but you have playlists | Liked Music and Library Songs are different sets. See [Library](/ytkew/guide/library/). |
 | A playlist stops at 5,000 tracks | The paging cap. It is there so a runaway continuation cannot spin forever. |
 | Media keys do nothing | No session D-Bus. Everything else still works. |
+| Generic icon in the launcher or now-playing panel | The desktop entry is not installed. `ytkew --install-desktop-entry`. |
 | Visualizer is flat | PipeWire is not running, or nothing is playing through the default sink. |
 | Visualizer shows other apps' audio | Expected: it captures the sink monitor, like cava. |
 

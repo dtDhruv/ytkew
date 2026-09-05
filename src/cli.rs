@@ -23,6 +23,37 @@ pub struct Cli {
     /// Report what the API can see with the current credentials.
     #[arg(long)]
     pub diagnose: bool,
+
+    /// Add a launcher entry and icon. `cargo install` copies only the
+    /// binary, so this is how it gets a name and a picture in the
+    /// applications menu and the now-playing panel.
+    #[arg(long)]
+    pub install_desktop_entry: bool,
+
+    /// Remove the launcher entry and icon.
+    #[arg(long)]
+    pub uninstall_desktop_entry: bool,
+}
+
+/// Put the launcher entry and icon in place, or take them away again.
+pub fn run_desktop_entry(install: bool) -> Result<()> {
+    if install {
+        for path in crate::desktop::install()? {
+            println!("wrote {}", path.display());
+        }
+        println!();
+        println!("ytkew should now appear in your applications menu, and the");
+        println!("now-playing panel will show its name and icon rather than a bus id.");
+    } else {
+        let removed = crate::desktop::uninstall()?;
+        if removed.is_empty() {
+            println!("nothing to remove");
+        }
+        for path in removed {
+            println!("removed {}", path.display());
+        }
+    }
+    Ok(())
 }
 
 /// Guided credential setup. Kept deliberately chatty -- this is the one part
@@ -180,6 +211,17 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
             println!("  mpv          {}", v.lines().next().unwrap_or("present"));
         }
         Err(_) => println!("  mpv          MISSING -- nothing will play"),
+    }
+
+    println!();
+    // The commonest "why does it look wrong in my launcher" answer, and one
+    // `cargo install` cannot solve on its own.
+    if crate::desktop::is_installed() {
+        println!("desktop entry: installed");
+    } else {
+        println!("desktop entry: not installed");
+        println!("               run `ytkew --install-desktop-entry` for a launcher");
+        println!("               entry and a proper icon in the now-playing panel");
     }
 
     println!();
