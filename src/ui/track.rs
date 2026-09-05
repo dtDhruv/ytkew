@@ -55,12 +55,16 @@ pub(super) fn draw_track(f: &mut Frame, area: Rect, app: &mut App) {
             // so tell ratatui to leave these cells alone rather than painting
             // over the graphics.
             reserve_cells(f, rect);
-        } else {
+        } else if !app.graphics_available() {
             match &app.cover {
                 Some(c) => draw_cover(f, rect, c),
                 None => draw_cover_placeholder(f, rect, &app.palette),
             }
         }
+        // Otherwise a protocol image is only being held back by an overlay.
+        // Leave the cells empty: substituting half-blocks for the moment the
+        // menu is up swaps a sharp picture for a coarse one, which reads as
+        // the artwork degrading rather than as a menu opening.
     }
 
     draw_metadata(f, l.meta, track, &app.palette);

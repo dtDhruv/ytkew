@@ -139,18 +139,22 @@ impl App {
         self.clear_cover_art();
     }
 
-    /// True when the cover is drawn by a graphics protocol rather than into
-    /// ratatui's buffer. Requires a loaded image -- there is no placeholder.
+    /// True when there is artwork a graphics protocol could draw: a loaded
+    /// image, a protocol to draw it with, and the cover switched on.
+    pub fn graphics_available(&self) -> bool {
+        self.cover_visible && self.graphics != Graphics::None && self.cover.is_some()
+    }
+
+    /// True when that image should be on screen right now.
     ///
     /// An open overlay turns this off. A pixel image is not part of the cell
-    /// grid, so nothing drawn into ratatui's buffer can cover it: the menu
-    /// would render underneath. Falling back to block art for as long as the
-    /// overlay is up keeps the cover visible and lets the menu sit on top.
+    /// grid, so nothing drawn into ratatui's buffer can cover it -- the menu
+    /// would render underneath -- and the protocols that could reorder it
+    /// (kitty's negative z-index) still draw above the cell background, so an
+    /// opaque panel over the art is not achievable either. The image comes
+    /// off screen for as long as the overlay is up.
     pub fn graphics_active(&self) -> bool {
-        self.cover_visible
-            && self.graphics != Graphics::None
-            && self.cover.is_some()
-            && !self.menu_open
+        self.graphics_available() && !self.menu_open
     }
 
     /// Take the region that was blanked, if any, so the renderer can reset
