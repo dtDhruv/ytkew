@@ -38,9 +38,17 @@
    Scrolling the block beats reflowing it into nonsense. */
 .terminal pre {
   font-size: 0.8rem;
-  line-height: 1.35;
+  /* Exactly 1: the capture is box-drawing art, and any leading at all leaves
+     gaps between the rows so the panel borders stop joining up and the whole
+     thing looks ragged. */
+  line-height: 1;
   white-space: pre;
   overflow-x: auto;
+  /* Some fallback faces draw box-drawing glyphs narrower than the cell, which
+     shears the columns. Ask for the metrics the art assumes. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  tab-size: 8;
 }
 
 @media (max-width: 50rem) {
@@ -78,6 +86,12 @@
   border-radius: 0.5rem;
   overflow: hidden;
   margin-block: 1.5rem;
+  /* The capture is a fixed number of columns wide. A full-width frame around
+     it leaves a slab of empty terminal to the right, so let the frame hug the
+     art and centre the result. */
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
 }
 .terminal-bar {
   display: flex;
