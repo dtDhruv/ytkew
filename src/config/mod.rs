@@ -104,7 +104,9 @@ pub struct Config {
     pub cell_px: [u16; 2],
     pub hide_help: bool,
     /// Volume used on a first run, before any state has been saved.
+    pub keys: crate::config::keymap::KeyPreset,
     pub initial_volume: f64,
+    pub volume_max: f64,
     pub volume_step: f64,
     pub seek_step: f64,
     /// Theme name: "cover" to take colours from the album art, one of the
@@ -134,7 +136,9 @@ impl Default for Config {
             cover_mode: CoverMode::Auto,
             cell_px: [0, 0],
             hide_help: false,
+            keys: crate::config::keymap::KeyPreset::Kew,
             initial_volume: 100.0,
+            volume_max: 100.0,
             volume_step: 5.0,
             seek_step: 5.0,
             theme: crate::theme::COVER.to_string(),
@@ -210,7 +214,14 @@ theme = "cover"
 
 accent_color = 6              # ANSI index, used only as a last resort
 
+keys = "kew"                  # kew | vim -- vim swaps navigation for vim
+                              # motions (gg, G, ctrl+d/u, dd, x, J/K) and
+                              # moves next/prev track to H/L
 initial_volume = 100.0        # only applies before state.toml exists
+volume_max = 100.0            # raise to at most 130 to allow boosting quiet
+                              # tracks; above 100 mpv adds plain digital gain
+                              # with nothing to catch the peaks, so loud
+                              # material will clip and sound fuzzy
 volume_step = 5.0
 seek_step = 5.0
 

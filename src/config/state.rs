@@ -56,9 +56,9 @@ impl State {
         if state.volume <= 0.0 {
             state.volume = cfg.initial_volume;
         }
-        // The ceiling matches what the player accepts, so a boosted volume
-        // survives a restart.
-        state.volume = state.volume.clamp(0.0, 130.0);
+        // The ceiling matches what the player accepts, so a boost survives a
+        // restart only while the config still allows one.
+        state.volume = state.volume.clamp(0.0, cfg.volume_max.clamp(100.0, 130.0));
         state
     }
 
@@ -128,16 +128,22 @@ mod tests {
         }
         .save(&dir)
         .unwrap();
-        assert_eq!(State::load(&dir, &cfg).volume, 130.0);
+        assert_eq!(State::load(&dir, &cfg).volume, 100.0);
 
-        // A deliberate boost is left alone.
+        // A boost is kept only when the config opted into one.
+        let boosted = Config {
+            initial_volume: 80.0,
+            volume_max: 130.0,
+            ..Config::default()
+        };
         State {
             volume: 120.0,
             ..Default::default()
         }
         .save(&dir)
         .unwrap();
-        assert_eq!(State::load(&dir, &cfg).volume, 120.0);
+        assert_eq!(State::load(&dir, &cfg).volume, 100.0, "capped by default");
+        assert_eq!(State::load(&dir, &boosted).volume, 120.0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

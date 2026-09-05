@@ -1,8 +1,12 @@
 //! Actions and the key table that produces them.
 //!
-//! Defaults follow kew's bindings, so muscle memory carries over.
+//! Two presets. `kew` follows kew's bindings so muscle memory carries over,
+//! and is the default. `vim` keeps the playback keys but replaces navigation
+//! with the motions a vim user already has in their fingers, including the
+//! two-key `gg` and `dd`.
 
 use crossterm::event::{KeyCode, KeyModifiers};
+use serde::{Deserialize, Serialize};
 
 /// Every discrete thing a keypress can do. Mirrors kew's `MSG_*` set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,15 +57,57 @@ pub enum Action {
     Quit,
 }
 
+/// Which set of bindings to use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyPreset {
+    /// kew's bindings, so muscle memory carries over.
+    #[default]
+    Kew,
+    /// vim motions for navigation, kew's keys for playback.
+    Vim,
+}
+
+impl KeyPreset {
+    pub fn name(self) -> &'static str {
+        match self {
+            KeyPreset::Kew => "kew",
+            KeyPreset::Vim => "vim",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Self {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "vim" => KeyPreset::Vim,
+            _ => KeyPreset::Kew,
+        }
+    }
+}
+
 /// A resolved key -> action table.
 pub struct Keymap {
     bindings: Vec<(KeyCode, KeyModifiers, Action)>,
+    /// Two-key sequences, `gg` style. Held separately because the first key
+    /// has to be recognised as a prefix before the second arrives.
+    sequences: Vec<(char, char, Action)>,
 }
 
 impl Default for Keymap {
-    /// kew's default bindings, verbatim where they make sense for a
-    /// streaming client.
     fn default() -> Self {
+        Self::for_preset(KeyPreset::Kew)
+    }
+}
+
+impl Keymap {
+    pub fn for_preset(preset: KeyPreset) -> Self {
+        match preset {
+            KeyPreset::Kew => Self::kew(),
+            KeyPreset::Vim => Self::vim(),
+        }
+    }
+
+    /// kew's bindings, verbatim where they make sense for a streaming client.
+    fn kew() -> Self {
         use Action::*;
         use KeyCode::*;
         const NONE: KeyModifiers = KeyModifiers::NONE;
@@ -131,11 +177,120 @@ impl Default for Keymap {
             (Esc, NONE, ToggleMenu),
             (Char('q'), NONE, Quit),
         ];
-        Self { bindings }
+        Self {
+            bindings,
+            sequences: Vec::new(),
+        }
     }
-}
 
-impl Keymap {
+    /// vim motions for moving around, kew's keys for the transport.
+    ///
+    /// Deliberately not a full modal editor: there is no insert mode to leave
+    /// and no buffer to edit, so the useful part is the motions.
+    fn vim() -> Self {
+        use Action::*;
+        use KeyCode::*;
+        const NONE: KeyModifiers = KeyModifiers::NONE;
+        const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
+        const CTRL: KeyModifiers = KeyModifiers::CONTROL;
+
+        let bindings = vec![
+            // Playback. h/l are motions in vim, so the transport moves to
+            // shifted keys and the arrows.
+            (Char(' '), NONE, PlayPause),
+            (Char('p'), NONE, PlayPause),
+            (Char('S'), SHIFT, Stop),
+            (Char('L'), SHIFT, Next),
+            (Char('H'), SHIFT, Prev),
+            (Right, NONE, Next),
+            (Left, NONE, Prev),
+            (Char('w'), NONE, SeekForward),
+            (Char('b'), NONE, SeekBack),
+            // Volume
+            (Char('+'), NONE, VolumeUp),
+            (Char('='), NONE, VolumeUp),
+            (Char('-'), NONE, VolumeDown),
+            // Motions
+            (Char('j'), NONE, ScrollDown),
+            (Char('k'), NONE, ScrollUp),
+            (Down, NONE, ScrollDown),
+            (Up, NONE, ScrollUp),
+            (Char('d'), CTRL, Action::PageDown),
+            (Char('u'), CTRL, Action::PageUp),
+            (Char('f'), CTRL, Action::PageDown),
+            (Char('b'), CTRL, Action::PageUp),
+            (Char('G'), SHIFT, Bottom),
+            (KeyCode::PageUp, NONE, Action::PageUp),
+            (KeyCode::PageDown, NONE, Action::PageDown),
+            (Home, NONE, Top),
+            (End, NONE, Bottom),
+            (Tab, NONE, NextView),
+            (BackTab, SHIFT, PrevView),
+            // Modes
+            (Char('s'), NONE, Shuffle),
+            (Char('r'), NONE, ToggleRepeat),
+            (Char('v'), NONE, CycleVisualizer),
+            (Char('c'), NONE, ToggleAscii),
+            (Char('.'), NONE, ToggleLike),
+            (Char('R'), SHIFT, StartRadio),
+            (Char('['), NONE, CoverSmaller),
+            (Char(']'), NONE, CoverBigger),
+            // Queue editing. x deletes under the cursor, dd does the same
+            // for anyone whose fingers reach for it first.
+            (Enter, NONE, Enqueue),
+            (Enter, KeyModifiers::ALT, EnqueueAndPlay),
+            (Char('o'), NONE, EnqueueAndPlay),
+            (Char('J'), SHIFT, MoveDown),
+            (Char('K'), SHIFT, MoveUp),
+            (Char('x'), NONE, Remove),
+            (Delete, NONE, Remove),
+            (Backspace, NONE, ClearQueue),
+            // Views
+            (Char('1'), NONE, ShowQueue),
+            (Char('2'), NONE, ShowLibrary),
+            (Char('3'), NONE, ShowTrack),
+            (Char('4'), NONE, ShowSearch),
+            (F(2), NONE, ShowQueue),
+            (F(3), NONE, ShowLibrary),
+            (F(4), NONE, ShowTrack),
+            (F(5), NONE, ShowSearch),
+            (F(6), NONE, ShowHelp),
+            (Char('m'), NONE, ShowLyrics),
+            (Char('/'), NONE, ShowSearch),
+            (Char('P'), SHIFT, PlayAll),
+            (Esc, NONE, ToggleMenu),
+            (Char('q'), NONE, Quit),
+        ];
+        let sequences = vec![('g', 'g', Top), ('d', 'd', Remove)];
+        Self {
+            bindings,
+            sequences,
+        }
+    }
+
+    /// Does this key open a two-key sequence? Such a key produces no action
+    /// of its own; the next keypress decides.
+    pub fn is_sequence_prefix(&self, code: KeyCode, mods: KeyModifiers) -> Option<char> {
+        if mods.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+            return None;
+        }
+        match code {
+            KeyCode::Char(c) if self.sequences.iter().any(|(a, _, _)| *a == c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Complete a sequence opened by `first`.
+    pub fn resolve_sequence(&self, first: char, code: KeyCode) -> Option<Action> {
+        let KeyCode::Char(second) = code else {
+            return None;
+        };
+        self.sequences
+            .iter()
+            .find(|(a, b, _)| *a == first && *b == second)
+            .map(|(_, _, action)| *action)
+    }
+
     pub fn resolve(&self, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
         // Shift is implicit in the char for things like 'S', so compare on the
         // modifiers that actually distinguish a binding.
@@ -153,6 +308,11 @@ impl Keymap {
     /// Modifiers are included: without them `ctrl+g` renders as a bare `g`,
     /// which collides with whatever plain `g` is bound to.
     pub fn keys_for(&self, action: Action) -> Vec<String> {
+        let seqs = self
+            .sequences
+            .iter()
+            .filter(|(_, _, a)| *a == action)
+            .map(|(x, y, _)| format!("{x}{y}"));
         self.bindings
             .iter()
             .filter(|(_, _, a)| *a == action)
@@ -167,6 +327,7 @@ impl Keymap {
                 s.push_str(&key_name(*c));
                 s
             })
+            .chain(seqs)
             .collect()
     }
 }
@@ -197,6 +358,115 @@ fn key_name(code: KeyCode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vim_motions_resolve() {
+        let km = Keymap::for_preset(KeyPreset::Vim);
+        assert_eq!(
+            km.resolve(KeyCode::Char('j'), KeyModifiers::NONE),
+            Some(Action::ScrollDown)
+        );
+        assert_eq!(
+            km.resolve(KeyCode::Char('G'), KeyModifiers::SHIFT),
+            Some(Action::Bottom)
+        );
+        assert_eq!(
+            km.resolve(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            Some(Action::PageDown)
+        );
+        assert_eq!(
+            km.resolve(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            Some(Action::PageUp)
+        );
+        // h and l are motions in vim, so the transport moved to H and L.
+        assert_eq!(
+            km.resolve(KeyCode::Char('L'), KeyModifiers::SHIFT),
+            Some(Action::Next)
+        );
+        assert_eq!(km.resolve(KeyCode::Char('l'), KeyModifiers::NONE), None);
+    }
+
+    #[test]
+    fn gg_and_dd_need_both_keys() {
+        let km = Keymap::for_preset(KeyPreset::Vim);
+        // `g` alone commits to nothing; it opens a sequence.
+        assert_eq!(km.resolve(KeyCode::Char('g'), KeyModifiers::NONE), None);
+        assert_eq!(
+            km.is_sequence_prefix(KeyCode::Char('g'), KeyModifiers::NONE),
+            Some('g')
+        );
+        assert_eq!(
+            km.resolve_sequence('g', KeyCode::Char('g')),
+            Some(Action::Top)
+        );
+        assert_eq!(
+            km.resolve_sequence('d', KeyCode::Char('d')),
+            Some(Action::Remove)
+        );
+        // A mismatched second key is not an action, so the caller falls back.
+        assert_eq!(km.resolve_sequence('g', KeyCode::Char('j')), None);
+        // ctrl+d is its own binding, never the start of `dd`.
+        assert_eq!(
+            km.is_sequence_prefix(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            None
+        );
+    }
+
+    #[test]
+    fn the_kew_preset_has_no_sequences_so_g_still_acts_alone() {
+        let km = Keymap::for_preset(KeyPreset::Kew);
+        assert_eq!(
+            km.is_sequence_prefix(KeyCode::Char('g'), KeyModifiers::NONE),
+            None
+        );
+        assert_eq!(
+            km.resolve(KeyCode::Char('g'), KeyModifiers::NONE),
+            Some(Action::MoveDown)
+        );
+    }
+
+    #[test]
+    fn the_help_view_lists_two_key_sequences() {
+        let km = Keymap::for_preset(KeyPreset::Vim);
+        assert!(km.keys_for(Action::Top).contains(&"gg".to_string()));
+    }
+
+    #[test]
+    fn both_presets_bind_the_essentials() {
+        // Whichever preset is active, the app has to remain usable.
+        for preset in [KeyPreset::Kew, KeyPreset::Vim] {
+            let km = Keymap::for_preset(preset);
+            for action in [
+                Action::PlayPause,
+                Action::Quit,
+                Action::ToggleMenu,
+                Action::ScrollUp,
+                Action::ScrollDown,
+                Action::Top,
+                Action::Bottom,
+                Action::Next,
+                Action::Prev,
+                Action::Enqueue,
+                Action::ShowSearch,
+                Action::ShowLibrary,
+            ] {
+                assert!(
+                    !km.keys_for(action).is_empty(),
+                    "{preset:?} has no key for {action:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn preset_names_round_trip() {
+        for p in [KeyPreset::Kew, KeyPreset::Vim] {
+            assert_eq!(KeyPreset::from_name(p.name()), p);
+        }
+        assert_eq!(KeyPreset::from_name("VIM"), KeyPreset::Vim);
+        // An unknown preset falls back rather than leaving the app keyless.
+        assert_eq!(KeyPreset::from_name("nonsense"), KeyPreset::Kew);
+    }
 
     #[test]
     fn kew_bindings_resolve() {

@@ -1,6 +1,7 @@
 //! Persistent chrome: the tab strip, the now-playing bar and the hint line.
 
 use crate::app::App;
+use crate::config::keymap::Action;
 use crate::model::fmt_duration;
 use crate::ui::View;
 use ratatui::layout::Rect;
@@ -235,6 +236,70 @@ pub(super) fn draw_player_bar(f: &mut Frame, area: Rect, app: &mut App) {
     }
 }
 
+/// The keys for an action, joined the way the hint line shows them, or the
+/// literal fallback when the preset binds nothing to it.
+fn hint_key(app: &App, action: Action, fallback: &str) -> String {
+    let keys = app.keymap.keys_for(action);
+    if keys.is_empty() {
+        return fallback.to_string();
+    }
+    // One or two is a hint; the full list is what the help view is for.
+    keys.into_iter().take(2).collect::<Vec<_>>().join("/")
+}
+
+/// A pair of opposed actions as one `x/y` hint.
+fn hint_pair(app: &App, a: Action, b: Action, fallback: &str) -> String {
+    let (ka, kb) = (app.keymap.keys_for(a), app.keymap.keys_for(b));
+    match (ka.first(), kb.first()) {
+        (Some(x), Some(y)) => format!("{x}/{y}"),
+        _ => fallback.to_string(),
+    }
+}
+
+fn pane_hints(app: &App) -> Vec<(String, &'static str)> {
+    let key = |a, f| hint_key(app, a, f);
+    let pair = |a, b, f| hint_pair(app, a, b, f);
+    let menu = (key(Action::ToggleMenu, "esc"), "menu");
+    let move_ = (pair(Action::ScrollDown, Action::ScrollUp, "j/k"), "move");
+    match app.view {
+        View::Track => vec![
+            (key(Action::PlayPause, "space"), "play"),
+            (pair(Action::Prev, Action::Next, "h/l"), "skip"),
+            (pair(Action::SeekBack, Action::SeekForward, "a/d"), "seek"),
+            (pair(Action::VolumeUp, Action::VolumeDown, "+/-"), "vol"),
+            (key(Action::Shuffle, "s"), "shuffle"),
+            (key(Action::ToggleRepeat, "r"), "repeat"),
+            (key(Action::ShowLyrics, "m"), "lyrics"),
+            menu,
+        ],
+        View::Queue => vec![
+            (key(Action::Enqueue, "enter"), "play"),
+            move_,
+            (pair(Action::MoveUp, Action::MoveDown, "f/g"), "reorder"),
+            (key(Action::Remove, "del"), "remove"),
+            (key(Action::ClearQueue, "bksp"), "clear all"),
+            menu,
+        ],
+        View::Library => vec![
+            (key(Action::Enqueue, "enter"), "open"),
+            (key(Action::EnqueueAndPlay, "alt+enter"), "play all"),
+            move_,
+            menu,
+        ],
+        View::Search => vec![
+            (key(Action::Enqueue, "enter"), "search"),
+            ("i".to_string(), "edit"),
+            move_,
+            (key(Action::PlayAll, "P"), "play all"),
+        ],
+        View::Lyrics => vec![
+            (pair(Action::ScrollDown, Action::ScrollUp, "j/k"), "scroll"),
+            (key(Action::NextView, "tab"), "back"),
+        ],
+        View::Help => vec![(key(Action::NextView, "tab"), "back")],
+    }
+}
+
 pub(super) fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let dim = app.palette.secondary().to_color();
     let accent = app.palette.accent().to_color();
@@ -253,41 +318,10 @@ pub(super) fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     }
 
     // Hints for the current pane rather than one static line listing
-    // everything, most of which does not apply where you are.
-    let hints: &[(&str, &str)] = match app.view {
-        View::Track => &[
-            ("space", "play"),
-            ("h/l", "skip"),
-            ("a/d", "seek"),
-            ("+/-", "vol"),
-            ("s", "shuffle"),
-            ("r", "repeat"),
-            ("m", "lyrics"),
-            ("esc", "menu"),
-        ],
-        View::Queue => &[
-            ("enter", "play"),
-            ("j/k", "move"),
-            ("f/g", "reorder"),
-            ("del", "remove"),
-            ("bksp", "clear all"),
-            ("esc", "menu"),
-        ],
-        View::Library => &[
-            ("enter", "open"),
-            ("alt+enter", "play all"),
-            ("j/k", "move"),
-            ("esc", "menu"),
-        ],
-        View::Search => &[
-            ("enter", "search"),
-            ("i", "edit"),
-            ("j/k", "move"),
-            ("P", "play all"),
-        ],
-        View::Lyrics => &[("j/k", "scroll"), ("tab", "back")],
-        View::Help => &[("tab", "back")],
-    };
+    // everything, most of which does not apply where you are. Keys come from
+    // the active keymap, so the line stays true under either preset.
+    let hints = pane_hints(app);
+    let hints: Vec<(&str, &str)> = hints.iter().map(|(k, l)| (k.as_str(), *l)).collect();
 
     let mut spans = vec![Span::raw(" ")];
     for (i, (key, label)) in hints.iter().enumerate() {

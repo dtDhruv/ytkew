@@ -137,9 +137,13 @@ pub struct App {
     pub cover_visible: bool,
     /// Active theme name. "cover" means take the colours from the artwork.
     pub theme: String,
+    /// Built-in themes plus anything the user dropped in `themes/`.
+    pub themes: crate::theme::Themes,
 
     /// btop-style overlay menu: escape opens it, q still quits outright.
     pub menu_open: bool,
+    /// First key of a two-key sequence, waiting on the second.
+    pub pending_key: Option<char>,
     pub menu_sel: usize,
     pub menu_screen: MenuScreen,
     pub option_sel: usize,
@@ -166,9 +170,11 @@ pub struct App {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cfg: Config,
         state: crate::config::State,
+        themes: crate::theme::Themes,
         api: Arc<Api>,
         player: Player,
         covers: Arc<CoverLoader>,
@@ -194,7 +200,8 @@ impl App {
         } else {
             state.theme.clone()
         };
-        let start_palette = theme_palette(&active_theme, &cfg, cfg_accent);
+        let keymap = Keymap::for_preset(cfg.keys);
+        let start_palette = theme_palette(&active_theme, &themes, &cfg, cfg_accent);
         // Resolve the cell size before the TUI starts, since the CSI query
         // needs a quiet terminal.
         let (cfg_cell_px, cell_source) =
@@ -210,7 +217,7 @@ impl App {
             },
             visual: Visualizer::start(),
             cfg,
-            keymap: Keymap::default(),
+            keymap,
             api,
             player,
             queue,
@@ -243,7 +250,9 @@ impl App {
             pending_seek: None,
             cover_visible: state_cover_visible,
             theme: active_theme,
+            themes,
             menu_open: false,
+            pending_key: None,
             menu_sel: 0,
             menu_screen: MenuScreen::Main,
             option_sel: 0,

@@ -41,14 +41,21 @@ pub async fn run(cli: Cli) -> Result<()> {
         cfg.cell_px = state.cover_cell;
     }
     state.cover_cell = cfg.cell_px;
+    let _ = crate::theme::write_example_if_missing(&cfg_dir);
+    let (themes, theme_problems) = crate::theme::Themes::load(&cfg_dir);
     let (api_handle, warning) = api::Api::connect(&cfg_dir).await;
     let api = Arc::new(api_handle);
 
-    let (player, mut player_rx) = Player::spawn(state.volume).await.context("starting mpv")?;
+    let (player, mut player_rx) = Player::spawn(state.volume, cfg.volume_max)
+        .await
+        .context("starting mpv")?;
     let (tx, mut app_rx) = mpsc::unbounded_channel::<AppMsg>();
     let covers = Arc::new(CoverLoader::new(api::cache_dir()));
 
-    let mut app = App::new(cfg, state, api.clone(), player, covers, tx.clone());
+    let mut app = App::new(cfg, state, themes, api.clone(), player, covers, tx.clone());
+    for problem in theme_problems {
+        app.notify(format!("theme {problem}"));
+    }
 
     // MPRIS is best-effort: no session bus (plain ssh, some containers) just
     // means no media keys, never a failure to start.
@@ -215,6 +222,20 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<()> {
     // Re-entering the search view with '/' or typing in it resumes editing.
     if app.view == ui::View::Search && matches!(key.code, KeyCode::Char('i')) {
         app.search_editing = true;
+        return Ok(());
+    }
+
+    // A pending `g` or `d` takes the next key first, so `gg` cannot be read
+    // as two separate presses.
+    if let Some(first) = app.pending_key.take() {
+        if let Some(action) = app.keymap.resolve_sequence(first, key.code) {
+            app.handle_action(action).await?;
+            return Ok(());
+        }
+        // Not a sequence after all: fall through and treat this key normally.
+    }
+    if let Some(c) = app.keymap.is_sequence_prefix(key.code, key.modifiers) {
+        app.pending_key = Some(c);
         return Ok(());
     }
 

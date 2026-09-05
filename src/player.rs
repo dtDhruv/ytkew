@@ -80,13 +80,21 @@ pub struct Player {
     req_id: AtomicI64,
     socket: PathBuf,
     child: Arc<RwLock<Option<Child>>>,
+    /// Ceiling for the volume. Above 100 mpv applies plain digital gain with
+    /// nothing to catch the peaks, so anything already near full scale clips
+    /// and the track turns fuzzy. Boosting stays available for quiet
+    /// recordings, but only if the user asks for it in the config.
+    volume_max: f64,
 }
 
 impl Player {
     /// Spawn mpv and connect to its IPC socket.
     pub async fn spawn(
         initial_volume: f64,
+        volume_max: f64,
     ) -> Result<(Self, mpsc::UnboundedReceiver<PlayerEvent>)> {
+        let volume_max = volume_max.clamp(100.0, 130.0);
+        let initial_volume = initial_volume.clamp(0.0, volume_max);
         let socket = socket_path();
         let _ = std::fs::remove_file(&socket);
 
@@ -107,6 +115,10 @@ impl Player {
             .arg("--demuxer-max-bytes=64MiB")
             .arg("--demuxer-readahead-secs=20")
             .arg("--replaygain=track")
+            // Let replaygain attenuate rather than clip when a track's tag
+            // asks for more headroom than the stream has.
+            .arg("--replaygain-clip=no")
+            .arg(format!("--volume-max={volume_max}"))
             .arg(format!("--volume={initial_volume}"))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -156,6 +168,7 @@ impl Player {
             req_id: AtomicI64::new(100),
             socket,
             child: Arc::new(RwLock::new(Some(child))),
+            volume_max,
         };
         player.observe_properties()?;
         Ok((player, ev_rx))
@@ -228,7 +241,7 @@ impl Player {
 
     pub async fn add_volume(&self, delta: f64) -> Result<f64> {
         let cur = self.state.read().await.volume;
-        let next = (cur + delta).clamp(0.0, 130.0);
+        let next = (cur + delta).clamp(0.0, self.volume_max);
         self.command(json!(["set_property", "volume", next]))?;
         self.state.write().await.volume = next;
         Ok(next)
@@ -236,7 +249,7 @@ impl Player {
 
     /// Set volume absolutely. MPRIS hands us a level rather than a delta.
     pub async fn set_volume(&self, vol: f64) -> Result<()> {
-        let v = vol.clamp(0.0, 130.0);
+        let v = vol.clamp(0.0, self.volume_max);
         self.command(json!(["set_property", "volume", v]))?;
         self.state.write().await.volume = v;
         Ok(())

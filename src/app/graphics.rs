@@ -40,13 +40,18 @@ impl Graphics {
 
 /// The palette a theme name resolves to. `cover` has no fixed colours -- it
 /// starts from the accent and is replaced once artwork loads.
-pub(crate) fn theme_palette(name: &str, cfg: &Config, accent: u8) -> Palette {
+pub(crate) fn theme_palette(
+    name: &str,
+    themes: &crate::theme::Themes,
+    cfg: &Config,
+    accent: u8,
+) -> Palette {
     if name.eq_ignore_ascii_case("custom") {
         if let Some(p) = crate::theme::from_hex(&cfg.theme_colors) {
             return p;
         }
     }
-    match crate::theme::find(name) {
+    match themes.find(name) {
         Some(t) => t.palette(),
         None => Palette::from_ansi(accent),
     }
@@ -63,7 +68,8 @@ impl App {
                 None => Palette::from_ansi(self.cfg.accent_color),
             };
         } else {
-            self.palette = theme_palette(&self.theme, &self.cfg, self.cfg.accent_color);
+            self.palette =
+                theme_palette(&self.theme, &self.themes, &self.cfg, self.cfg.accent_color);
         }
         self.clear_cover_art();
     }

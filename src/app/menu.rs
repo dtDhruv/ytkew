@@ -36,6 +36,7 @@ pub enum MenuScreen {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
     Theme,
+    Keys,
     Renderer,
     ShowCover,
     Visualizer,
@@ -44,8 +45,9 @@ pub enum Setting {
     AutoplayRadio,
 }
 
-pub const SETTINGS: [Setting; 7] = [
+pub const SETTINGS: [Setting; 8] = [
     Setting::Theme,
+    Setting::Keys,
     Setting::Renderer,
     Setting::ShowCover,
     Setting::Visualizer,
@@ -58,6 +60,7 @@ impl Setting {
     pub fn label(self) -> &'static str {
         match self {
             Setting::Theme => "Theme",
+            Setting::Keys => "Key bindings",
             Setting::Renderer => "Cover renderer",
             Setting::ShowCover => "Show cover art",
             Setting::Visualizer => "Visualizer",
@@ -71,6 +74,9 @@ impl Setting {
         match self {
             Setting::Theme => {
                 "Colours for borders, text and accents. \"cover\" samples them from the album art."
+            }
+            Setting::Keys => {
+                "kew keeps kew's keys. vim swaps in vim motions: gg, G, ctrl+d/u, dd, x, J/K to reorder, H/L for previous and next track."
             }
             Setting::Renderer => {
                 "How album art is drawn. Kitty sizes in cells and needs no tuning; sixel needs an accurate cell size; blocks work anywhere."
@@ -110,13 +116,14 @@ impl App {
         };
         match s {
             Setting::Theme => {
-                let names = crate::theme::names();
+                let names = self.themes.names();
                 let i = names
                     .iter()
                     .position(|n| n.eq_ignore_ascii_case(&self.theme))
                     .unwrap_or(0);
-                (names.iter().map(|n| n.to_string()).collect(), i)
+                (names, i)
             }
+            Setting::Keys => pick(&["kew", "vim"], self.cfg.keys.name()),
             Setting::Renderer => pick(
                 &["auto", "kitty", "sixel", "blocks"],
                 self.cfg.cover_mode.name(),
@@ -176,6 +183,12 @@ impl App {
             Setting::Theme => {
                 self.theme = value.to_string();
                 self.apply_theme();
+            }
+            Setting::Keys => {
+                self.cfg.keys = crate::config::keymap::KeyPreset::from_name(value);
+                self.keymap = crate::config::Keymap::for_preset(self.cfg.keys);
+                // A half-typed sequence makes no sense under the new table.
+                self.pending_key = None;
             }
             Setting::Renderer => {
                 self.clear_cover_art();
