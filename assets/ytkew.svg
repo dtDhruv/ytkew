@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>ytkew</title>
+
+  <!-- Solid fills throughout, no gradients: icon renderers vary wildly in
+       what they support, and several drop gradients inherited through a
+       group, leaving a blank square. The btop red ramp is spelled out across
+       the bars instead. -->
+  <rect width="128" height="128" rx="28" fill="#1b1315"/>
+
+  <!-- The spectrum, which is what ytkew looks like in use. Bar heights are
+       chosen so the silhouette still reads at 16px. -->
+  <rect x="24" y="66" width="13" height="36" rx="3" fill="#8f1717"/>
+  <rect x="43" y="46" width="13" height="56" rx="3" fill="#b81f1f"/>
+  <rect x="62" y="28" width="13" height="74" rx="3" fill="#e62525"/>
+  <rect x="81" y="50" width="13" height="52" rx="3" fill="#c92121"/>
+  <rect x="100" y="72" width="13" height="30" rx="3" fill="#9c1919"/>
+
+  <!-- The progress bar beneath it, with the playhead. -->
+  <rect x="24" y="110" width="80" height="5" rx="2.5" fill="#5c1010"/>
+  <rect x="24" y="110" width="34" height="5" rx="2.5" fill="#e62525"/>
+  <circle cx="58" cy="112.5" r="7" fill="#f04a4a"/>
+</svg>

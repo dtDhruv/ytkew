@@ -15,7 +15,8 @@ pub struct Cli {
     #[arg(trailing_var_arg = true)]
     pub query: Vec<String>,
 
-    /// Set up credentials: `ytkew --auth cookie` or `ytkew --auth oauth`.
+    /// Set up credentials: `browser` lifts an existing Firefox login,
+    /// `cookie` takes a pasted header, `oauth` runs a device flow.
     #[arg(long, value_name = "METHOD")]
     pub auth: Option<String>,
 
@@ -29,8 +30,34 @@ pub struct Cli {
 pub async fn run_auth(method: &str, cfg_dir: &std::path::Path) -> Result<()> {
     std::fs::create_dir_all(cfg_dir)?;
     match method {
+        "browser" => {
+            println!("Looking for a signed-in YouTube Music session in Firefox…");
+            let found = crate::browser::find_cookies()?;
+            println!("  profile: {}", found.profile.display());
+            println!("  cookies: {}", found.names.join(", "));
+            println!();
+            // Same validation as a pasted header: a cookie that reads fine
+            // but the API rejects is worse than no cookie at all.
+            print!("checking… ");
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+            match ytmapi_rs::YtMusic::from_cookie(&found.header).await {
+                Ok(yt) => match yt.get_library_playlists().await {
+                    Ok(pls) => {
+                        let path = cfg_dir.join("cookie.txt");
+                        write_secret(&path, found.header.as_bytes())?;
+                        println!("ok — {} playlists visible", pls.len());
+                        println!("saved to {}", path.display());
+                    }
+                    Err(e) => anyhow::bail!("the browser's cookies were rejected by the API: {e}"),
+                },
+                Err(e) => anyhow::bail!("the browser's cookies could not be parsed: {e}"),
+            }
+        }
         "cookie" => {
             println!("YouTube Music cookie setup");
+            println!();
+            println!("If you use Firefox, `ytkew --auth browser` does this for you.");
             println!();
             println!("  1. Open https://music.youtube.com in your browser, signed in.");
             println!("  2. Open devtools (F12) -> Network tab.");
@@ -86,7 +113,9 @@ pub async fn run_auth(method: &str, cfg_dir: &std::path::Path) -> Result<()> {
             write_secret(&path, serde_json::to_string_pretty(&token)?.as_bytes())?;
             println!("saved to {}", path.display());
         }
-        other => anyhow::bail!("unknown auth method {other:?} (use 'cookie' or 'oauth')"),
+        other => {
+            anyhow::bail!("unknown auth method {other:?} (use 'browser', 'cookie' or 'oauth')")
+        }
     }
     Ok(())
 }

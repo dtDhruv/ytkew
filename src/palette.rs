@@ -63,6 +63,28 @@ impl Palette {
         self.mid.ensure_visible(80.0)
     }
 
+    /// Ordinary list text.
+    ///
+    /// Rows used to be drawn in the border colour, which is fine on a solid
+    /// dark background and close to unreadable on a translucent or blurred
+    /// one -- and a cover-derived palette can make that colour nearly black.
+    /// This keeps a floor under it.
+    pub fn body(&self) -> Rgb {
+        self.mid.ensure_visible(105.0)
+    }
+
+    /// Secondary detail beside body text: artist columns, sublabels, hints.
+    /// Dimmer than `body`, but still above the point where it disappears.
+    pub fn muted(&self) -> Rgb {
+        self.dark.ensure_visible(78.0)
+    }
+
+    /// Borders, rules and scrollbar tracks. Meant to recede, but not to
+    /// vanish entirely on a light or transparent background.
+    pub fn chrome(&self) -> Rgb {
+        self.dark.ensure_visible(52.0)
+    }
+
     /// Vertical gradient for the visualizer: dark at the base, accent on top,
     /// which is what makes kew's spectrum read as a single object.
     pub fn gradient(&self, steps: usize) -> Vec<Rgb> {
@@ -227,6 +249,48 @@ pub fn extract(pixels: &[Rgb], k: usize) -> Palette {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lum(c: Rgb) -> f32 {
+        0.2126 * c.0 as f32 + 0.7152 * c.1 as f32 + 0.0722 * c.2 as f32
+    }
+
+    #[test]
+    fn text_tiers_stay_readable_even_from_a_near_black_palette() {
+        // A cover of a dark album art can produce exactly this.
+        let p = Palette {
+            dark: Rgb(6, 5, 8),
+            mid: Rgb(20, 18, 24),
+            bright: Rgb(40, 36, 48),
+        };
+        assert!(lum(p.body()) >= 100.0, "body {:?}", p.body());
+        assert!(lum(p.muted()) >= 70.0, "muted {:?}", p.muted());
+        assert!(lum(p.chrome()) >= 45.0, "chrome {:?}", p.chrome());
+    }
+
+    #[test]
+    fn the_tiers_stay_in_order() {
+        for p in [
+            Palette {
+                dark: Rgb(0x50, 0x49, 0x45),
+                mid: Rgb(0xd5, 0xc4, 0xa1),
+                bright: Rgb(0xfa, 0xbd, 0x2f),
+            },
+            Palette {
+                dark: Rgb(6, 5, 8),
+                mid: Rgb(20, 18, 24),
+                bright: Rgb(40, 36, 48),
+            },
+        ] {
+            assert!(
+                lum(p.chrome()) <= lum(p.muted()),
+                "chrome must recede behind detail text"
+            );
+            assert!(
+                lum(p.muted()) <= lum(p.body()),
+                "detail must recede behind body text"
+            );
+        }
+    }
 
     #[test]
     fn separates_two_obvious_clusters() {

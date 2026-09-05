@@ -27,6 +27,7 @@
 pub mod api;
 pub mod app;
 pub mod art;
+pub mod browser;
 pub mod cli;
 pub mod config;
 pub mod model;

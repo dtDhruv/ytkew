@@ -96,9 +96,13 @@ impl App {
     }
 
     pub(crate) fn point_in_list(&self, col: u16, row: u16) -> bool {
-        self.hits.list.is_some_and(|(r, _)| {
+        let inside = |r: &ratatui::layout::Rect| {
             col >= r.x && col < r.x + r.width && row >= r.y && row < r.y + r.height
-        })
+        };
+        // The library's column view has no single list rect, so check each
+        // column; without this the wheel falls through to the volume.
+        self.hits.list.is_some_and(|(r, _)| inside(&r))
+            || self.hits.lib_columns.iter().any(|(r, _, _)| inside(r))
     }
 
     /// Item index under the pointer, if it is over a list row.
@@ -201,9 +205,20 @@ impl App {
         }
     }
 
+    /// Jump to the first or last entry of the focused list.
+    pub(crate) fn select_edge(&mut self, last: bool) {
+        if self.in_library_columns() {
+            self.library_edge_sibling(last);
+            return;
+        }
+        self.set_selection(if last { usize::MAX } else { 0 });
+    }
+
+    /// Select an absolute index in the focused list. In the column view that
+    /// is still a row index, since the cursor is stored as one.
     pub(crate) fn set_selection(&mut self, to: usize) {
         if self.in_library_columns() {
-            self.library_edge_sibling(to > 0);
+            self.library_sel = to.min(self.library_rows.len().saturating_sub(1));
             return;
         }
         let len = self.list_len();
@@ -434,8 +449,8 @@ impl App {
             Action::ScrollDown => self.move_selection(1),
             Action::PageUp => self.move_selection(-10),
             Action::PageDown => self.move_selection(10),
-            Action::Top => self.set_selection(0),
-            Action::Bottom => self.set_selection(usize::MAX),
+            Action::Top => self.select_edge(false),
+            Action::Bottom => self.select_edge(true),
             Action::Enqueue => self.activate_selection(false),
             Action::EnqueueAndPlay => self.activate_selection(true),
             Action::Remove => self.remove_selection(),

@@ -106,9 +106,23 @@ cell_px = [16, 32]   # whatever your terminal actually uses
 ## Install
 
 ```sh
+make install          # binary, desktop entry and icon into ~/.local
+```
+
+`PREFIX=/usr/local sudo make install` for a system-wide install; `make
+uninstall` removes all three.
+
+Building alone puts only the binary in place:
+
+```sh
 cargo build --release
 install -Dm755 target/release/ytkew ~/.local/bin/ytkew
 ```
+
+The desktop entry and icon are what give ytkew a name and picture in a
+launcher and in the GNOME/KDE now-playing panel, so `cargo install ytkew`
+leaves it showing a generic terminal icon. `make install` is the way to get
+the real one.
 
 ## Diagnosing
 
@@ -124,12 +138,8 @@ returns, which separates "my library is empty" from "auth is broken".
 ytkew exposes MPRIS on D-Bus, so media keys work and it appears in the
 GNOME/KDE now-playing panel with artwork, position and controls.
 
-For the panel to show a name and icon rather than a bare bus id, install the
-desktop entry:
-
-```sh
-install -Dm644 ytkew.desktop ~/.local/share/applications/ytkew.desktop
-```
+`make install` puts the desktop entry and icon in place, which is what gives
+the panel a name and picture rather than a bare bus id.
 
 Artwork is offered as a `file://` URL into `~/.cache/ytkew/`, because most
 panels only fetch local files.
@@ -140,12 +150,23 @@ panels only fetch local files.
 your own library (playlists, liked songs, liking tracks) does.
 
 ```sh
+ytkew --auth browser     # lifts an existing Firefox login, no copy-pasting
 ytkew --auth cookie      # paste your browser Cookie header; validated before saving
 ytkew --auth oauth       # needs a Google Cloud "TVs and Limited Input devices" client
 ```
 
-Cookie auth is easier and doesn't expire on a timer. Both land in
-`~/.config/ytkew/`.
+`--auth browser` reads the YouTube cookies out of your Firefox profile and
+saves them, so signing in to music.youtube.com in the browser is all the
+setup there is. It searches native, snap and flatpak Firefox plus LibreWolf,
+Waterfox and Zen, and checks the result against the API before writing
+anything.
+
+Chromium is not supported: it encrypts cookie values with a key held in the
+desktop keyring, which is a different job. `--auth cookie` still takes a
+pasted header from any browser.
+
+Cookie auth is easier than OAuth and doesn't expire on a timer. All three land
+in `~/.config/ytkew/`, owner-readable only.
 
 ## Keys
 
@@ -324,6 +345,8 @@ for quiet recordings.
 - Non-Premium accounts may get lower-bitrate streams.
 - Podcasts and episodes are filtered out of search results; ytkew plays
   music.
+- `--auth browser` reads Firefox only. Chromium's cookie values are encrypted
+  against the desktop keyring.
 - Paged fetches stop at 5,000 items, so a playlist longer than that is
   truncated. The cap exists so a continuation token that keeps pointing at
   more results cannot spin forever.

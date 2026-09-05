@@ -9,6 +9,13 @@ keywords = ["music", "youtube", "tui", "terminal", "player"]
 categories = ["command-line-utilities", "multimedia::audio"]
 license = "GPL-3.0-or-later"
 
+[features]
+default = ["browser-cookies"]
+# Reads the Firefox cookie store so `ytkew auth browser` can find an existing
+# YouTube Music login. Pulls in a bundled SQLite; turn it off for a leaner
+# build and use `ytkew --auth cookie` instead.
+browser-cookies = ["dep:rusqlite"]
+
 [dependencies]
 ytmapi-rs = "0.3"
 ratatui = "0.30"
@@ -30,6 +37,7 @@ libc = "0.2"
 mpris-server = { version = "0.10", features = ["tokio"] }
 base64 = "0.23.1"
 png = "0.18.1"
+rusqlite = { version = "0.37", features = ["bundled"], optional = true }
 
 [profile.release]
 opt-level = 3

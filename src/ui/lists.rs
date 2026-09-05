@@ -29,8 +29,9 @@ pub(super) fn draw_up_next(f: &mut Frame, area: Rect, app: &mut App) {
         return centered_message(f, inner, msg);
     }
 
-    let dim = app.palette.secondary().to_color();
-    let faint = app.palette.dark.to_color();
+    let accent = app.palette.accent().to_color();
+    let dim = app.palette.muted().to_color();
+    let body = app.palette.body().to_color();
     // The selection is the queue's, so moving here and switching to the queue
     // pane lands on the same track.
     let sel = app.queue_sel.max(start).min(total - 1);
@@ -52,23 +53,30 @@ pub(super) fn draw_up_next(f: &mut Frame, area: Rect, app: &mut App) {
         .map(|i| {
             let t = &app.queue.tracks()[i];
             let is_sel = i == sel;
-            let row = if artist_w > 0 {
-                format!(
-                    "  {} {}{}",
+            // Separate spans so the artist recedes behind the title rather
+            // than the whole row sharing one brightness.
+            let title = Style::default().fg(if is_sel { accent } else { body });
+            let title = if is_sel {
+                title.add_modifier(Modifier::REVERSED)
+            } else {
+                title
+            };
+            let secondary = if is_sel {
+                title
+            } else {
+                Style::default().fg(dim)
+            };
+            let mut spans = vec![Span::styled("  ", secondary)];
+            if artist_w > 0 {
+                spans.push(Span::styled(
                     fit(&t.artist, artist_w.saturating_sub(1)),
-                    fit(&t.title, title_w),
-                    rfit(&t.duration_text, 6),
-                )
-            } else {
-                format!("  {}{}", fit(&t.title, title_w), rfit(&t.duration_text, 6),)
-            };
-            let base = Style::default().fg(if is_sel { dim } else { faint });
-            let style = if is_sel {
-                base.add_modifier(Modifier::REVERSED)
-            } else {
-                base
-            };
-            Line::from(Span::styled(elide(&row, inner.width - bar_w as u16), style))
+                    secondary,
+                ));
+                spans.push(Span::styled(" ", secondary));
+            }
+            spans.push(Span::styled(fit(&t.title, title_w), title));
+            spans.push(Span::styled(rfit(&t.duration_text, 6), secondary));
+            Line::from(spans)
         })
         .collect();
     Paragraph::new(lines).render(inner, f.buffer_mut());
@@ -76,6 +84,10 @@ pub(super) fn draw_up_next(f: &mut Frame, area: Rect, app: &mut App) {
     if bar_w == 1 {
         scrollbar(f, inner, sel - start, upcoming, app);
     }
+    // Pin the selection inside the upcoming range so scrolling here cannot
+    // strand it behind the playhead, where this pane cannot show it.
+    app.queue_sel = sel;
+    app.hits.list = Some((inner, win_start));
 }
 
 pub(super) fn draw_queue(f: &mut Frame, area: Rect, app: &mut App) {
@@ -91,8 +103,7 @@ pub(super) fn draw_queue(f: &mut Frame, area: Rect, app: &mut App) {
         return centered_message(f, area, "queue is empty — / to search, 2 for your library");
     }
     let accent = app.palette.accent().to_color();
-    let dim = app.palette.secondary().to_color();
-    let faint = app.palette.dark.to_color();
+    let body = app.palette.body().to_color();
     let playing = app.queue.current_index();
     let total = app.queue.len();
     let (start, end) = window(app.queue_sel, total, area.height as usize);
@@ -121,10 +132,10 @@ pub(super) fn draw_queue(f: &mut Frame, area: Rect, app: &mut App) {
                 fit(&t.title, title_w),
                 rfit(&t.duration_text, 6),
             );
-            let base = match (is_playing, is_sel) {
-                (true, _) => Style::default().fg(accent).add_modifier(Modifier::BOLD),
-                (false, true) => Style::default().fg(dim),
-                _ => Style::default().fg(faint),
+            let base = if is_playing {
+                Style::default().fg(accent).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(body)
             };
             let style = if is_sel {
                 base.add_modifier(Modifier::REVERSED)
@@ -209,8 +220,8 @@ fn draw_library_columns(f: &mut Frame, area: Rect, app: &mut App, max_cols: usiz
     }
 
     let accent = app.palette.accent().to_color();
-    let dim = app.palette.secondary().to_color();
-    let faint = app.palette.dark.to_color();
+    let body = app.palette.body().to_color();
+    let faint = app.palette.chrome().to_color();
     // The focused column is the last one the cursor runs through; anything to
     // its right is a preview of what stepping in would show.
     let focused = shown.iter().rposition(|c| c.selected.is_some());
@@ -250,9 +261,9 @@ fn draw_library_columns(f: &mut Frame, area: Rect, app: &mut App, max_cols: usiz
                     "\u{25b8}"
                 };
                 let base = if is_song {
-                    Style::default().fg(faint)
+                    Style::default().fg(body)
                 } else {
-                    Style::default().fg(dim)
+                    Style::default().fg(body).add_modifier(Modifier::BOLD)
                 };
                 let style = match (col.selected == Some(i), is_focused) {
                     // Only the focused column gets a solid cursor; the trail
@@ -310,8 +321,7 @@ fn draw_library_tree(f: &mut Frame, area: Rect, app: &mut App) {
         return centered_message(f, area, msg);
     }
     let accent = app.palette.accent().to_color();
-    let dim = app.palette.secondary().to_color();
-    let faint = app.palette.dark.to_color();
+    let body = app.palette.body().to_color();
     let total = rows.len();
     let (start, end) = window(app.library_sel, total, area.height as usize);
     let bar_w = if total > area.height as usize { 1 } else { 0 };
@@ -330,11 +340,11 @@ fn draw_library_tree(f: &mut Frame, area: Rect, app: &mut App) {
             // Containers carry the accent, leaves recede, so the hierarchy
             // reads at a glance rather than by counting indents.
             let base = if row.is_song {
-                Style::default().fg(faint)
+                Style::default().fg(body)
             } else if row.depth == 0 {
                 Style::default().fg(accent).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(dim)
+                Style::default().fg(body).add_modifier(Modifier::BOLD)
             };
             let style = if i == app.library_sel {
                 base.add_modifier(Modifier::REVERSED)
@@ -362,8 +372,9 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &mut App) {
         app,
     );
     let accent = app.palette.accent().to_color();
-    let dim = app.palette.secondary().to_color();
-    let faint = app.palette.dark.to_color();
+    let dim = app.palette.muted().to_color();
+    let body = app.palette.body().to_color();
+    let faint = app.palette.chrome().to_color();
 
     // A block cursor makes it obvious whether the box has focus.
     let cursor = if app.search_editing { "▌" } else { "" };
@@ -456,13 +467,11 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &mut App) {
                 fit(&hit.label(), label_w),
                 rfit(&hit.trailing(), tail_w),
             );
-            let base = if is_sel {
-                Style::default().fg(dim)
-            } else if hit.track().is_none() {
+            let base = if hit.track().is_none() {
                 // Containers read as things to open, like the library's.
-                Style::default().fg(dim)
+                Style::default().fg(body).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(faint)
+                Style::default().fg(body)
             };
             let style = if is_sel {
                 base.add_modifier(Modifier::REVERSED)
