@@ -1,13 +1,6 @@
-```
-██╗   ██╗████████╗██╗  ██╗███████╗██╗    ██╗
-╚██╗ ██╔╝╚══██╔══╝██║ ██╔╝██╔════╝██║    ██║
- ╚████╔╝    ██║   █████╔╝ █████╗  ██║ █╗ ██║
-  ╚██╔╝     ██║   ██╔═██╗ ██╔══╝  ██║███╗██║
-   ██║      ██║   ██║  ██╗███████╗╚███╔███╔╝
-   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝ 
-```
-
 <div align="center">
+
+<img src="assets/wordmark.svg" alt="ytkew" width="460">
 
 **A terminal YouTube Music player, in the spirit of [kew](https://github.com/ravachol/kew).**
 

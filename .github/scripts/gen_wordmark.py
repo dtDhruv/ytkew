@@ -63,10 +63,12 @@ for i, row in enumerate(rows):
     if cells:
         parts.append(f'  <g fill="{RAMP[i]}">{"".join(cells)}</g>')
 parts.append("</svg>")
-# Only the website needs this. The README shows the banner as text in a code
-# fence, where GitHub's monospace font tiles the block characters correctly --
-# it is arbitrary web pages that cannot be trusted to.
-out = pathlib.Path("docs/src/assets/wordmark.svg")
-out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text("\n".join(parts) + "\n")
-print(f"wrote {out} ({W:.0f}x{H:.0f})")
+# Both the README and the site use it. A code fence would render the banner
+# in the reader's default text colour, left-aligned, and only tile correctly
+# if their monospace font cooperates -- vector shapes are red, centred and
+# identical everywhere.
+svg = "\n".join(parts) + "\n"
+for out in (pathlib.Path("assets/wordmark.svg"), pathlib.Path("docs/src/assets/wordmark.svg")):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(svg)
+    print(f"wrote {out} ({W:.0f}x{H:.0f})")
