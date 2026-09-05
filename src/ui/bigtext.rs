@@ -16,6 +16,7 @@ fn glyph(c: char) -> [&'static str; 3] {
         'G' => ["┌─┐", "│ ┬", "└─┘"],
         'H' => ["┬ ┬", "├─┤", "┴ ┴"],
         'I' => ["┬", "│", "┴"],
+        'K' => ["┬┌─", "├┴┐", "┴ ┴"],
         'L' => ["┬  ", "│  ", "┴─┘"],
         'N' => ["┌┐┌", "│││", "┘└┘"],
         'O' => ["┌─┐", "│ │", "└─┘"],
@@ -24,6 +25,8 @@ fn glyph(c: char) -> [&'static str; 3] {
         'S' => ["┌─┐", "└─┐", "└─┘"],
         'T' => ["┌┬┐", " │ ", " ┴ "],
         'U' => ["┬ ┬", "│ │", "└─┘"],
+        'W' => ["┬ ┬", "│││", "└┴┘"],
+        'Y' => ["┬ ┬", "└┬┘", " ┴ "],
         ' ' => [" ", " ", " "],
         _ => ["", "", ""],
     }
@@ -98,7 +101,7 @@ mod tests {
 
     #[test]
     fn every_letter_the_menu_uses_has_a_glyph() {
-        for word in ["OPTIONS", "HELP", "QUIT"] {
+        for word in ["OPTIONS", "HELP", "QUIT", "YTKEW"] {
             for c in word.chars() {
                 assert!(!glyph(c)[0].is_empty(), "no glyph for {c:?} in {word}");
             }

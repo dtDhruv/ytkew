@@ -281,6 +281,9 @@ pub struct App {
     pub covers: Arc<CoverLoader>,
 
     pub view: View,
+    /// Where Help and Lyrics were opened from, so escape returns there
+    /// instead of stacking the menu on top of them.
+    prev_view: View,
     pub palette: Palette,
     pub cover: Option<Cover>,
     /// video_id the current cover belongs to, so stale loads are ignored.
@@ -400,6 +403,7 @@ impl App {
             queue,
             covers,
             view: View::Track,
+            prev_view: View::Track,
             palette: start_palette,
             cover: None,
             cover_for: None,
@@ -854,6 +858,11 @@ impl App {
     fn set_view(&mut self, view: View) {
         if self.view != view {
             self.invalidate_sixel();
+            // Only remember panes you navigate *from*, so escaping out of
+            // help cannot land you back in help.
+            if !matches!(self.view, View::Help | View::Lyrics) {
+                self.prev_view = self.view;
+            }
         }
         self.view = view;
     }
@@ -1453,9 +1462,16 @@ impl App {
             Action::StartRadio => self.radio_from_current(),
             Action::PlayAll => self.play_all_in_context(),
             Action::ToggleMenu => {
-                self.menu_open = !self.menu_open;
-                self.menu_sel = 0;
-                self.menu_screen = MenuScreen::Main;
+                // Help and lyrics are overlays in their own right; escape
+                // dismisses them rather than opening the menu over the top.
+                if matches!(self.view, View::Help | View::Lyrics) {
+                    let back = self.prev_view;
+                    self.set_view(back);
+                } else {
+                    self.menu_open = !self.menu_open;
+                    self.menu_sel = 0;
+                    self.menu_screen = MenuScreen::Main;
+                }
             }
             Action::CoverSmaller => self.nudge_cover(-2),
             Action::CoverBigger => self.nudge_cover(2),
