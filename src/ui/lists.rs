@@ -383,11 +383,32 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &mut App) {
     )))
     .render(Rect::new(area.x, area.y + 1, area.width, 1), f.buffer_mut());
 
+    // The filter strip: YouTube Music searches one kind at a time, so which
+    // kind is showing has to be on screen, not remembered.
+    let mut spans = vec![Span::raw(" ")];
+    for (i, filter) in crate::app::SEARCH_FILTERS.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", Style::default().fg(faint)));
+        }
+        let active = *filter == app.search_filter;
+        spans.push(Span::styled(
+            filter.name(),
+            if active {
+                Style::default().fg(accent).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(faint)
+            },
+        ));
+    }
+    spans.push(Span::styled("   ← → to switch", Style::default().fg(faint)));
+    Paragraph::new(Line::from(spans))
+        .render(Rect::new(area.x, area.y + 2, area.width, 1), f.buffer_mut());
+
     let list = Rect::new(
         area.x,
-        area.y + 2,
+        area.y + 3,
         area.width,
-        area.height.saturating_sub(2),
+        area.height.saturating_sub(3),
     );
 
     if app.search_editing && !app.suggestions.is_empty() && app.search_results.is_empty() {
@@ -416,23 +437,29 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &mut App) {
     let (start, end) = window(app.search_sel, total, list.height as usize);
     let bar_w = if total > list.height as usize { 1 } else { 0 };
     let idx_w = total.to_string().len();
-    let fixed = 2 + idx_w + 2 + 6 + bar_w;
+    // The trailing column holds a duration or a kind, so it needs more than
+    // the six columns a duration alone would.
+    let tail_w = 9;
+    let fixed = 2 + idx_w + 2 + tail_w + bar_w;
     let flex = (list.width as usize).saturating_sub(fixed);
-    let artist_w = (flex * 2 / 5).min(flex);
-    let title_w = flex - artist_w;
+    let sub_w = (flex * 2 / 5).min(flex);
+    let label_w = flex - sub_w;
 
     let lines: Vec<Line> = (start..end)
         .map(|i| {
-            let t = &app.search_results[i];
+            let hit = &app.search_results[i];
             let is_sel = i == app.search_sel;
             let row = format!(
                 "  {} {} {}{}",
                 rfit(&(i + 1).to_string(), idx_w),
-                fit(&t.artist, artist_w),
-                fit(&t.title, title_w),
-                rfit(&t.duration_text, 6),
+                fit(&hit.sublabel(), sub_w),
+                fit(&hit.label(), label_w),
+                rfit(&hit.trailing(), tail_w),
             );
             let base = if is_sel {
+                Style::default().fg(dim)
+            } else if hit.track().is_none() {
+                // Containers read as things to open, like the library's.
                 Style::default().fg(dim)
             } else {
                 Style::default().fg(faint)

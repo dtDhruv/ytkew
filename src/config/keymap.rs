@@ -30,6 +30,8 @@ pub enum Action {
     Enqueue,
     EnqueueAndPlay,
     Remove,
+    /// Append to the end of the queue without interrupting playback.
+    AddToQueue,
     ClearQueue,
     MoveUp,
     MoveDown,
@@ -156,6 +158,7 @@ impl Keymap {
             (Char('f'), NONE, MoveUp),
             (Char('g'), NONE, MoveDown),
             (Delete, NONE, Remove),
+            (Char('A'), SHIFT, AddToQueue),
             (Backspace, NONE, ClearQueue),
             // The tab strip is numbered, so those digits switch tabs the way
             // a browser's do.
@@ -248,6 +251,7 @@ impl Keymap {
             (Char('K'), SHIFT, MoveUp),
             (Char('x'), NONE, Remove),
             (Delete, NONE, Remove),
+            (Char('A'), SHIFT, AddToQueue),
             (Backspace, NONE, ClearQueue),
             // Views
             (Char('1'), NONE, ShowQueue),

@@ -192,6 +192,93 @@ impl Api {
         Ok(res.iter().map(Track::from).collect())
     }
 
+    /// Albums matching a query, for the search view's album filter.
+    pub async fn search_albums(&self, query: &str) -> Result<Vec<AlbumRef>> {
+        let res = any_auth!(self, |yt| yt.search_albums(query).await)?;
+        Ok(res
+            .into_iter()
+            .map(|a| AlbumRef {
+                id: a.album_id.get_raw().to_string(),
+                title: a.title,
+                year: if a.artist.is_empty() {
+                    a.year
+                } else {
+                    format!("{} · {}", a.artist, a.year)
+                },
+            })
+            .collect())
+    }
+
+    pub async fn search_artists(&self, query: &str) -> Result<Vec<ArtistRef>> {
+        let res = any_auth!(self, |yt| yt.search_artists(query).await)?;
+        Ok(res
+            .into_iter()
+            .map(|a| ArtistRef {
+                channel_id: a.browse_id.get_raw().to_string(),
+                name: a.artist,
+                subtitle: a.subscribers.unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    /// Playlists matching a query. YouTube returns featured, community and
+    /// podcast results through one filter; podcasts are dropped, since ytkew
+    /// has nothing to do with them.
+    pub async fn search_playlists(&self, query: &str) -> Result<Vec<Playlist>> {
+        use ytmapi_rs::parse::SearchResultPlaylist;
+        let res = any_auth!(self, |yt| yt.search_playlists(query).await)?;
+        Ok(res
+            .into_iter()
+            .filter_map(|p| match p {
+                SearchResultPlaylist::Featured(f) => Some(Playlist {
+                    id: f.playlist_id.get_raw().to_string(),
+                    title: f.title,
+                    author: f.author,
+                    track_count: f.songs,
+                }),
+                SearchResultPlaylist::Community(c) => Some(Playlist {
+                    id: c.playlist_id.get_raw().to_string(),
+                    title: c.title,
+                    author: c.author,
+                    track_count: c.views,
+                }),
+                // Podcasts, and whatever else upstream adds to this
+                // non-exhaustive enum, are not things ytkew plays.
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// Videos matching a query. Music videos and live sets live here rather
+    /// than under songs, and they play the same way.
+    pub async fn search_videos(&self, query: &str) -> Result<Vec<Track>> {
+        use ytmapi_rs::parse::SearchResultVideo;
+        let res = any_auth!(self, |yt| yt.search_videos(query).await)?;
+        Ok(res
+            .into_iter()
+            .filter_map(|v| match v {
+                SearchResultVideo::Video {
+                    title,
+                    channel_name,
+                    video_id,
+                    length,
+                    thumbnails,
+                    ..
+                } => Some(Track {
+                    video_id: video_id.get_raw().to_string(),
+                    title,
+                    artist: channel_name,
+                    album: None,
+                    duration: crate::model::parse_duration(&length),
+                    duration_text: length,
+                    thumbnail: crate::model::best_thumbnail(&thumbnails, 544),
+                }),
+                // Podcast episodes are not playable through this path.
+                SearchResultVideo::VideoEpisode { .. } => None,
+            })
+            .collect())
+    }
+
     pub async fn search_suggestions(&self, query: &str) -> Result<Vec<String>> {
         let res = any_auth!(self, |yt| yt.get_search_suggestions(query).await)?;
         Ok(res

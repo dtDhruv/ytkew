@@ -314,11 +314,18 @@ impl App {
     pub fn play_all_in_context(&mut self) {
         match self.view {
             View::Search => {
-                let all = self.search_results.clone();
+                // Only the playable rows; an album or artist row has no
+                // track of its own to add.
+                let all: Vec<_> = self
+                    .search_results
+                    .iter()
+                    .filter_map(|h| h.track().cloned())
+                    .collect();
                 if all.is_empty() {
                     self.notify("nothing to play");
                 } else {
                     self.play_all(all, 0);
+                    self.queue_origin = Some(crate::app::QueueOrigin::Search);
                 }
             }
             View::Library => self.play_selected_library_node(),

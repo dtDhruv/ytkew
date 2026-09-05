@@ -168,6 +168,7 @@ kew's bindings, unchanged where they made sense.
 | `alt+enter` `ctrl+g` | add and jump to it |
 | `[` `]` | resize sixel art (only needed if its scale is off) |
 | `f` `g` | move track up / down in queue |
+| `A` | add to queue without interrupting |
 | `del` / `bksp` | remove one / clear the whole queue |
 | `esc` | menu — options, help, quit |
 | `P` | play everything in the current view |
@@ -179,6 +180,31 @@ kew's bindings, unchanged where they made sense.
 
 `/` also opens search. In the search box, `enter` searches, `esc` leaves
 editing, and autocomplete appears as you type.
+
+## Search
+
+Five filters — songs, videos, albums, artists, playlists — because YouTube
+Music filters server-side rather than returning one mixed list. `←` and `→`
+switch between them and re-run the query.
+
+`enter` plays a song or video; on an album or playlist it loads the whole
+thing and makes it the queue; on an artist it lists their releases. `A` adds
+to the queue instead of playing, which is how you stack things up without
+interrupting.
+
+## The queue
+
+The queue follows YouTube Music rather than a plain append-only list. It
+remembers what filled it, and that decides what happens next:
+
+- **A track from the playlist already playing** moves within the queue, so
+  the running order and anything queued behind it survive.
+- **A track from a different playlist or album** replaces the queue with that
+  one, starting where you picked.
+- **A one-off track from search, while a playlist is on**, slots in as the
+  next track and plays: the playlist resumes right after it, rather than
+  being thrown away for one song.
+- **`A`** appends to the end and never interrupts.
 
 ### vim bindings
 
@@ -195,6 +221,7 @@ transport keys stay put; navigation becomes what your fingers already know.
 | `w` `b` | seek forward / back |
 | `J` `K` | move track down / up in queue |
 | `x` `dd` | remove from queue |
+| `A` | add to queue without interrupting |
 | `o` | add and jump to it |
 | `c` | show / hide album art |
 
@@ -295,6 +322,8 @@ for quiet recordings.
 - The visualizer captures the whole audio sink, not just ytkew, so other
   applications' sound shows up in the bars. This is how `cava` behaves too.
 - Non-Premium accounts may get lower-bitrate streams.
+- Podcasts and episodes are filtered out of search results; ytkew plays
+  music.
 - Paged fetches stop at 5,000 items, so a playlist longer than that is
   truncated. The cap exists so a continuation token that keeps pointing at
   more results cannot spin forever.

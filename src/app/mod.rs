@@ -19,9 +19,10 @@ mod search;
 pub(crate) use graphics::theme_palette;
 pub use graphics::Graphics;
 pub use input::HitRegions;
-pub use library::{LibKind, LibNode, LibRow};
+pub use library::{LibColumn, LibKind, LibNode, LibRow};
 pub(crate) use menu::MenuOutcome;
 pub use menu::{MenuScreen, MENU_ITEMS, SETTINGS};
+pub use search::{SearchFilter, SearchHit, SEARCH_FILTERS};
 
 use crate::api::Api;
 use crate::art::{Cover, CoverLoader};
@@ -38,8 +39,22 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 /// Results of background work, delivered back to the single-threaded UI.
+/// Where the queue's contents came from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QueueOrigin {
+    /// A library container -- a playlist, album or artist's tracks.
+    Library(Vec<usize>),
+    /// Search results, or a one-off track played from them.
+    Search,
+}
+
 pub enum AppMsg {
-    SearchResults(Vec<Track>),
+    /// Results for one filter, tagged so a slow reply cannot land in a list
+    /// the user has already switched away from.
+    SearchResults {
+        filter: SearchFilter,
+        hits: Vec<SearchHit>,
+    },
     /// One page of children for the node at `path`. Addressed by path so a
     /// slow response cannot land on the wrong node after the user navigates
     /// away.
@@ -56,6 +71,8 @@ pub enum AppMsg {
         path: Vec<usize>,
         error: String,
     },
+    /// A fetched album or playlist that should become the queue.
+    PlayCollection(Vec<Track>),
     /// A radio mix to append behind a single played track.
     RadioTail {
         after: String,
@@ -106,7 +123,8 @@ pub struct App {
 
     pub search_input: String,
     pub search_editing: bool,
-    pub search_results: Vec<Track>,
+    pub search_results: Vec<SearchHit>,
+    pub search_filter: SearchFilter,
     pub suggestions: Vec<String>,
     pub search_sel: usize,
     pub searching: bool,
@@ -159,6 +177,10 @@ pub struct App {
     /// Node whose still-arriving pages should extend the queue, set when a
     /// "play all" starts on the first page of a multi-page fetch.
     queue_feed: Option<Vec<usize>>,
+    /// What the queue currently holds. Playing a track from the same context
+    /// moves within the queue; playing one from elsewhere replaces it, which
+    /// is how YouTube Music behaves.
+    pub(crate) queue_origin: Option<QueueOrigin>,
     /// Which graphics protocol to draw the cover with, if any.
     graphics: Graphics,
     /// A region just blanked, which the next frame must treat as empty so
@@ -241,6 +263,7 @@ impl App {
             search_input: String::new(),
             search_editing: false,
             search_results: Vec::new(),
+            search_filter: SearchFilter::default(),
             suggestions: Vec::new(),
             search_sel: 0,
             searching: false,
@@ -266,6 +289,7 @@ impl App {
             option_sel: 0,
             pending_play: None,
             queue_feed: None,
+            queue_origin: None,
             graphics: cfg_graphics,
             art_on_screen: None,
             stale_cover: None,
@@ -334,6 +358,7 @@ impl App {
         }
         // Whatever was feeding the old queue no longer applies.
         self.queue_feed = None;
+        self.queue_origin = None;
         self.queue.replace(tracks, start);
         self.start_current();
     }
@@ -455,13 +480,24 @@ impl App {
 
     pub fn handle_app_msg(&mut self, msg: AppMsg) {
         match msg {
-            AppMsg::SearchResults(tracks) => {
+            AppMsg::SearchResults { filter, hits } => {
+                if filter != self.search_filter {
+                    return;
+                }
                 self.searching = false;
                 self.search_sel = 0;
-                if tracks.is_empty() {
-                    self.notify("no results");
+                if hits.is_empty() {
+                    self.notify(format!("no {} found", filter.name()));
                 }
-                self.search_results = tracks;
+                self.search_results = hits;
+            }
+            AppMsg::PlayCollection(tracks) => {
+                self.searching = false;
+                self.play_all(tracks, 0);
+                // Not a library node, so it has no path; treat it as its own
+                // context so a later one-off plays next rather than replacing
+                // what was just loaded.
+                self.queue_origin = Some(QueueOrigin::Library(Vec::new()));
             }
             AppMsg::LibChildren {
                 path,
@@ -498,6 +534,7 @@ impl App {
                     if !tracks.is_empty() {
                         self.pending_play = None;
                         self.play_all(tracks, 0);
+                        self.queue_origin = Some(QueueOrigin::Library(path.clone()));
                         self.queue_feed = (!last).then(|| path.clone());
                     } else if last {
                         self.pending_play = None;

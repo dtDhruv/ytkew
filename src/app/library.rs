@@ -330,12 +330,26 @@ impl App {
             if siblings.is_empty() {
                 return;
             }
-            if jump || self.queue.current().is_none() {
-                let start = index.min(siblings.len() - 1);
-                self.play_all(siblings, start);
-            } else if let Some(t) = siblings.get(index).cloned() {
-                self.enqueue_track(t, false);
+            let start = index.min(siblings.len() - 1);
+            let origin = QueueOrigin::Library(parent_path.to_vec());
+            // Already listening to this playlist: move within the queue
+            // rather than rebuilding it, so the rest of the running order
+            // and anything queued up next survive.
+            if !jump && self.queue_origin.as_ref() == Some(&origin) {
+                if let Some(track) = siblings.get(start) {
+                    let id = track.video_id.clone();
+                    let at = self.queue.tracks().iter().position(|t| t.video_id == id);
+                    if let Some(i) = at {
+                        self.queue.jump_to(i);
+                        self.start_current();
+                        return;
+                    }
+                }
             }
+            // A different playlist: swap the queue over to it, the way
+            // picking a track in YouTube Music does.
+            self.play_all(siblings, start);
+            self.queue_origin = Some(origin);
             return;
         }
 
@@ -493,6 +507,7 @@ impl App {
                 self.notify("nothing playable here");
             } else {
                 self.play_all(tracks, 0);
+                self.queue_origin = Some(QueueOrigin::Library(path));
             }
             return;
         }

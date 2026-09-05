@@ -284,14 +284,16 @@ fn pane_hints(app: &App) -> Vec<(String, &'static str)> {
         ],
         View::Library => vec![
             (key(Action::Enqueue, "enter"), "open"),
-            (key(Action::EnqueueAndPlay, "alt+enter"), "play all"),
-            move_,
+            (pair(Action::Prev, Action::Next, "←/→"), "level"),
+            (key(Action::AddToQueue, "A"), "queue"),
+            (key(Action::PlayAll, "P"), "play all"),
             menu,
         ],
         View::Search => vec![
-            (key(Action::Enqueue, "enter"), "search"),
+            (key(Action::Enqueue, "enter"), "play"),
+            (key(Action::AddToQueue, "A"), "queue"),
             ("i".to_string(), "edit"),
-            move_,
+            (pair(Action::Prev, Action::Next, "←/→"), "filter"),
             (key(Action::PlayAll, "P"), "play all"),
         ],
         View::Lyrics => vec![

@@ -228,13 +228,71 @@ impl App {
                     }
                 }
             }
-            View::Search => {
-                if let Some(track) = self.search_results.get(self.search_sel).cloned() {
-                    self.enqueue_track(track, jump);
-                }
-            }
+            View::Search => self.activate_search_hit(jump),
             View::Library => self.activate_library_row(jump),
             _ => {}
+        }
+    }
+
+    /// Play a single track picked from outside the running queue.
+    ///
+    /// While a playlist is on, it slots in as the next track and the playlist
+    /// resumes after it -- YouTube Music's behaviour, and the only one that
+    /// does not make you rebuild your queue to hear one song. With no
+    /// playlist context it just plays.
+    pub(crate) fn play_one_off(&mut self, track: Track) {
+        let in_playlist = matches!(self.queue_origin, Some(QueueOrigin::Library(_)))
+            && self.queue.current().is_some();
+        if !in_playlist {
+            self.enqueue_track(track, true);
+            if self.queue_origin.is_none() {
+                self.queue_origin = Some(QueueOrigin::Search);
+            }
+            return;
+        }
+        let at = self.queue.insert_next(track);
+        self.queue.jump_to(at);
+        self.start_current();
+    }
+
+    /// Append to the end of the queue without disturbing what is playing.
+    ///
+    /// Enter plays things, so building a queue up front needs a key of its
+    /// own.
+    pub(crate) fn add_selection_to_queue(&mut self) {
+        let tracks: Vec<Track> = match self.active_list() {
+            View::Search => match self.search_results.get(self.search_sel) {
+                Some(hit) => hit.track().cloned().into_iter().collect(),
+                None => Vec::new(),
+            },
+            View::Library => {
+                let path = self.library_cursor();
+                match self.node_at(&path).map(|n| n.kind.clone()) {
+                    // A container adds everything under it.
+                    Some(LibKind::Song(t)) => vec![t],
+                    Some(_) => self.songs_under(&path),
+                    None => Vec::new(),
+                }
+            }
+            _ => Vec::new(),
+        };
+        if tracks.is_empty() {
+            self.notify("nothing here to add");
+            return;
+        }
+        let n = tracks.len();
+        let was_idle = self.queue.current().is_none();
+        self.queue.extend(tracks);
+        if was_idle {
+            self.queue.jump_to(0);
+            self.start_current();
+        } else {
+            self.resync_prefetch();
+            self.notify(if n == 1 {
+                "added to queue".to_string()
+            } else {
+                format!("added {n} tracks")
+            });
         }
     }
 
@@ -293,6 +351,10 @@ impl App {
             // no list to steer in that pane otherwise.
             Action::Prev if self.in_library_columns() => self.library_ascend(),
             Action::Next if self.in_library_columns() => self.library_descend(),
+            // In search they step through the filters, which is the only
+            // navigation that pane has.
+            Action::Prev if self.view == View::Search => self.cycle_search_filter(-1),
+            Action::Next if self.view == View::Search => self.cycle_search_filter(1),
             Action::Next => self.next_track().await,
             Action::Prev => self.prev_track(),
             Action::SeekForward => {
@@ -377,10 +439,12 @@ impl App {
             Action::Enqueue => self.activate_selection(false),
             Action::EnqueueAndPlay => self.activate_selection(true),
             Action::Remove => self.remove_selection(),
+            Action::AddToQueue => self.add_selection_to_queue(),
             Action::ClearQueue => {
                 // Stop a still-arriving playlist from refilling what was just
                 // cleared.
                 self.queue_feed = None;
+                self.queue_origin = None;
                 self.queue.clear();
                 let _ = self.player.stop();
                 let _ = self.player.clear_playlist();

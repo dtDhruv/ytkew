@@ -182,6 +182,33 @@ impl Queue {
         self.pos = if self.order.is_empty() { None } else { Some(0) };
     }
 
+    /// Slot a track in directly after the one playing, in both the visible
+    /// list and the playback order, and return where it landed.
+    ///
+    /// This is "play next": the queue you were listening to stays intact and
+    /// resumes once the inserted track finishes. Appending would bury it
+    /// behind the rest of the playlist, and replacing would throw the
+    /// playlist away.
+    pub fn insert_next(&mut self, track: Track) -> usize {
+        let Some(cur) = self.current_index() else {
+            self.push(track);
+            return self.tracks.len() - 1;
+        };
+        let at = cur + 1;
+        self.tracks.insert(at, track);
+        // Indices at or past the insertion point all shift up one.
+        for i in self.order.iter_mut() {
+            if *i >= at {
+                *i += 1;
+            }
+        }
+        // Place it immediately after the current entry in playback order,
+        // which is what makes it next even when shuffled.
+        let after = self.pos.map(|p| p + 1).unwrap_or(self.order.len());
+        self.order.insert(after.min(self.order.len()), at);
+        at
+    }
+
     pub fn remove(&mut self, track_index: usize) {
         if track_index >= self.tracks.len() {
             return;
@@ -241,6 +268,100 @@ impl Queue {
                 *i = a;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_insert {
+    use super::*;
+
+    fn track(id: &str) -> Track {
+        Track {
+            video_id: id.into(),
+            title: id.into(),
+            artist: String::new(),
+            album: None,
+            duration: None,
+            duration_text: String::new(),
+            thumbnail: None,
+        }
+    }
+
+    fn q(ids: &[&str], start: usize) -> Queue {
+        let mut q = Queue::new();
+        q.replace(ids.iter().map(|i| track(i)).collect(), start);
+        q
+    }
+
+    fn ids(q: &Queue) -> Vec<String> {
+        q.tracks().iter().map(|t| t.video_id.clone()).collect()
+    }
+
+    #[test]
+    fn insert_next_lands_after_the_current_track() {
+        let mut q = q(&["a", "b", "c"], 0);
+        let at = q.insert_next(track("x"));
+        assert_eq!(at, 1);
+        assert_eq!(ids(&q), ["a", "x", "b", "c"]);
+        // The playlist resumes where it left off once x is done.
+        assert_eq!(q.peek_next().unwrap().video_id, "x");
+        q.advance();
+        assert_eq!(q.current().unwrap().video_id, "x");
+        q.advance();
+        assert_eq!(q.current().unwrap().video_id, "b");
+    }
+
+    #[test]
+    fn insert_next_from_the_middle_keeps_the_tail() {
+        let mut q = q(&["a", "b", "c"], 1);
+        q.insert_next(track("x"));
+        assert_eq!(ids(&q), ["a", "b", "x", "c"]);
+        assert_eq!(q.current().unwrap().video_id, "b");
+        q.advance();
+        assert_eq!(q.current().unwrap().video_id, "x");
+        q.advance();
+        assert_eq!(q.current().unwrap().video_id, "c");
+    }
+
+    #[test]
+    fn insert_next_on_an_empty_queue_just_adds_it() {
+        let mut q = Queue::new();
+        q.insert_next(track("x"));
+        assert_eq!(ids(&q), ["x"]);
+    }
+
+    #[test]
+    fn insert_next_plays_next_even_when_shuffled() {
+        let mut q = q(&["a", "b", "c", "d", "e"], 0);
+        q.shuffle = true;
+        q.toggle_shuffle();
+        q.toggle_shuffle();
+        q.shuffle = true;
+        let playing = q.current().unwrap().video_id.clone();
+        q.insert_next(track("x"));
+        assert_eq!(
+            q.current().unwrap().video_id,
+            playing,
+            "inserting must not move the cursor"
+        );
+        assert_eq!(q.peek_next().unwrap().video_id, "x");
+        // And every original track is still present exactly once.
+        let mut all = ids(&q);
+        all.sort();
+        assert_eq!(all, ["a", "b", "c", "d", "e", "x"]);
+    }
+
+    #[test]
+    fn the_order_stays_a_permutation_after_inserting() {
+        let mut q = q(&["a", "b", "c"], 1);
+        q.insert_next(track("x"));
+        let mut seen = q.order.clone();
+        seen.sort();
+        assert_eq!(
+            seen,
+            (0..q.tracks().len()).collect::<Vec<_>>(),
+            "order must index every track exactly once"
+        );
     }
 }
 
