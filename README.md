@@ -8,34 +8,9 @@
 [![security](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml)
 [![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-e62525?style=flat)](LICENSE)
 
+<img src="assets/ytkew_track_1.png" alt="ytkew playing a queue: cover art, spectrum visualizer and the up-next list">
+
 </div>
-
-<br>
-
-```
- ytkew   1 queue    2 library    3 track    4 search               not signed in  1/20  vol ▪▪▪▫▫ 60% 
-──────────────────────────────┘           └───────────────────────────────────────────────────────────
-╭| now playing |─────────────────────────╮ ╭| up next |──────────────────────────────────────────────╮
-│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Creep (Acoustic)               4:19↑│
-│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Karma Police                   4:22█│
-│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Let Down                       5:00█│
-│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          No Surprises                   3:49█│
-│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Kelly Clarkson     Creep (Live)                   4:09█│
-│              ▀▀▀▀▀▀▀▀▀▀▀▀              │ │  Radiohead          Fake Plastic Trees             4:51█│
-│                                        │ │  Radiohead          Everything In Its Right Place  4:12█│
-│ Creep                                  │ │  Scala & Kolacny B… Creep                          4:54█│
-│ Radiohead                              │ │  Radiohead          Jigsaw Falling Into Place      4:09║│
-│ Creep                                  │ │  Scott Bradlee's P… Creep (feat. Haley Reinhart)   4:44║│
-│                                        │ │  Radiohead          Exit Music (For A Film)        4:28║│
-│                                        │ │  Radiohead          Street Spirit (Fade Out)       4:14║│
-│    ▄▅▅▇▇▁                              │ │  Radiohead          Airbag                         4:48║│
-│ ▆▆▆██████▇▇                            │ │  Radiohead          You And Whose Army?            3:11║│
-│ ███████████▇▅                          │ │  Radiohead          All I Need                     3:49║│
-│ ██████████████▅▃▄▃▃▁▂▅▁▃▆▅▁▂▁▂▁▂▁▂▂▁▂▂ │ │  Radiohead          No Surprises                   3:50║│
-│ 0:13 ━━●━━━━━━━━━━━━━━━━━━━━━━━━━ 3:58 │ │  Stone Temple Pilo… Creep                          5:33↓│
-╰────────────────────────────────| 1/20 |╯ ╰─────────────────────────────────────────────────────────╯
- space play · h/l skip · a/d seek · +/- vol · s shuffle · r repeat · m lyrics · esc menu   F6 help    
-```
 
 ytkew plays music from your YouTube Music account without a browser. It takes
 its interface and keybindings from kew, and hands playback to **mpv**, so a

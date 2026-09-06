@@ -14,9 +14,15 @@ categories = ["command-line-utilities", "multimedia::audio"]
 # the CI workflows, and shipping them only makes the crate bigger to fetch.
 # The desktop entry, icon and Makefile stay: they are how you get the launcher
 # entry that `cargo install` cannot set up on its own.
+#
+# Screenshots are excluded but still render everywhere they are used: crates.io
+# rewrites relative README image paths to absolute repository URLs, so the PNG
+# is fetched from GitHub rather than unpacked from the tarball. Only the SVGs
+# need to ship -- `src/desktop.rs` embeds the icon with `include_str!`.
 exclude = [
     "docs/",
     ".github/",
+    "assets/*.png",
     "deny.toml",
     ".gitignore",
     "CLAUDE.md",
