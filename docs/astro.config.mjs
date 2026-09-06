@@ -8,8 +8,9 @@ export default defineConfig({
   base: "/ytkew",
   trailingSlash: "always",
 
-  // The only image on the site is an SVG, which needs no processing. Skipping
-  // the default service keeps sharp -- and libvips with it -- out of the tree.
+  // Nothing here needs resizing: the icon and wordmark are SVGs, and the
+  // screenshot is served from public/ already sized. Skipping the default
+  // service keeps sharp -- and libvips with it -- out of the tree.
   image: { service: passthroughImageService() },
 
   integrations: [

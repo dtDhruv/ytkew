@@ -1,6 +1,6 @@
 """Regenerate every derived asset from its single source.
 
-Two jobs:
+Three jobs:
 
 * The wordmark. The terminal draws it with block and box-drawing characters,
   which only line up if the renderer's font tiles them exactly -- browsers do
@@ -10,8 +10,11 @@ Two jobs:
   website needs its own under `src/` for Astro's pipeline and another in
   `public/` for the favicon. Copying them here means changing the logo is one
   file, not three that quietly drift.
+* The screenshot. `assets/ytkew_track_1.png` is what the README shows; the
+  site needs its own copy under `public/`. Same reason as the icon: one file
+  to replace when the screenshot is retaken.
 
-Run it after touching the icon or `src/ui/banner.rs`:
+Run it after touching the icon, the screenshot, or `src/ui/banner.rs`:
 
     python3 .github/scripts/gen_assets.py
 
@@ -142,3 +145,17 @@ for out in (
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ICON, out)
     print(f"copied {ICON.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
+
+# The screenshot is a capture, not something this script can draw. It is
+# copied for the same reason as the icon: so retaking it means replacing one
+# file and running this, rather than remembering there is a second copy.
+# `public/` rather than `src/assets/` because the image service is set to
+# passthrough -- Astro would not process it anyway.
+SHOT = ROOT / "assets/ytkew_track_1.png"
+if SHOT.is_file():
+    out = ROOT / "docs/public/ytkew_track_1.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(SHOT, out)
+    print(f"copied {SHOT.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
+else:
+    sys.exit(f"{SHOT.relative_to(ROOT)} is missing; the README and site both use it")

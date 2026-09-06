@@ -93,6 +93,13 @@
   max-width: 100%;
   margin-inline: auto;
 }
+/* The screenshot fills the frame the ASCII capture used to. width/height are
+   on the element too, so the page does not reflow once it loads. */
+.terminal img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 .terminal-bar {
   display: flex;
   align-items: center;
