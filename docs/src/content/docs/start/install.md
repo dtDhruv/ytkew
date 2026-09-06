@@ -8,11 +8,11 @@ ytkew needs two programs on your `PATH` and refuses to start without them:
 - **mpv** 0.30 or newer, which does the playing
 - **yt-dlp**, which turns a YouTube video into a playable stream
 
-Pick your platform below.
+Get those first, then pick an install method.
 
-## Linux
+## Dependencies
 
-### 1. Dependencies
+### Linux
 
 ```sh
 sudo apt install mpv yt-dlp        # Debian, Ubuntu, Mint
@@ -34,32 +34,10 @@ sudo apt install pipx && pipx install yt-dlp
 ```
 :::
 
-### 2. Install ytkew
-
-```sh
-git clone https://github.com/dtDhruv/ytkew
-cd ytkew
-make install
-```
-
-Binary into `~/.local/bin`, desktop entry and icon into `~/.local/share`. Use
-`PREFIX=/usr/local sudo make install` for a system-wide install, and
-`make uninstall` to remove all three.
-
-## macOS
-
-### 1. Dependencies
+### macOS
 
 ```sh
 brew install mpv yt-dlp
-```
-
-### 2. Install ytkew
-
-```sh
-git clone https://github.com/dtDhruv/ytkew
-cd ytkew
-make install
 ```
 
 :::note[Two features are Linux-only]
@@ -73,9 +51,11 @@ Everything else — playback, cover art, the library, search, themes — works
 the same.
 :::
 
-## From crates.io
+## Install
 
-Either platform:
+### From crates.io
+
+The shortest route on either platform:
 
 ```sh
 cargo install ytkew
@@ -86,21 +66,31 @@ ytkew --install-desktop-entry
 what gives you a launcher entry and a real icon instead of a generic one.
 `ytkew --uninstall-desktop-entry` reverses it.
 
-You still need mpv and yt-dlp from the sections above.
+Needs a Rust toolchain, if you do not have one:
 
-## Without a package manager
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### From source
+
+```sh
+git clone https://github.com/dtDhruv/ytkew
+cd ytkew
+make install
+```
+
+Binary into `~/.local/bin`, desktop entry and icon into `~/.local/share` — no
+separate `--install-desktop-entry` step. Use `PREFIX=/usr/local sudo make
+install` for a system-wide install, and `make uninstall` to remove all three.
+
+### Without a package manager
 
 yt-dlp ships a self-contained binary that needs no Python:
 
 ```sh
 sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
   -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp
-```
-
-And a Rust toolchain, if you do not have one:
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 ## Build features
