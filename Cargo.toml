@@ -19,6 +19,7 @@ exclude = [
     ".github/",
     "deny.toml",
     ".gitignore",
+    "CLAUDE.md",
 ]
 license = "GPL-3.0-or-later"
 

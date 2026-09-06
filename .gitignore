@@ -1,1 +1,6 @@
 /target
+
+# macOS sprinkles these through any directory Finder has looked at, and the
+# machine that would normally filter them out with a global ignore is not
+# necessarily the one you are committing from.
+.DS_Store
