@@ -2,7 +2,7 @@
 
 <img src="assets/wordmark.svg" alt="ytkew" width="460">
 
-**A terminal YouTube Music player, in the spirit of [kew](https://github.com/ravachol/kew).**
+**YouTube Music on the terminal!**
 
 [![ci](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/ci.yml)
 [![security](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml/badge.svg)](https://github.com/dtDhruv/ytkew/actions/workflows/security.yml)
@@ -12,9 +12,7 @@
 
 </div>
 
-ytkew plays music from your YouTube Music account without a browser. It takes
-its interface and keybindings from kew, and hands playback to **mpv**, so a
-slow redraw can never stutter the audio.
+ytkew plays music from your YouTube Music account without a browser.
 
 ## Install
 
@@ -31,8 +29,7 @@ git clone https://github.com/dtDhruv/ytkew && cd ytkew && make install
 
 ## Documentation
 
-Everything — installing, signing in, every key, themes, configuration and
-troubleshooting — lives on the site:
+The documentation is on the site:
 
 ### **https://dtdhruv.github.io/ytkew**
 
@@ -79,8 +76,8 @@ It talks to an unofficial API that can change at any time.
 
 ## Credits
 
-[kew](https://github.com/ravachol/kew) for the interface and keybindings ·
-[btop](https://github.com/aristocratos/btop) for the banner and the red ·
-[ytmapi-rs](https://github.com/nick42d/youtui) for the protocol layer ·
-[ratatui](https://github.com/ratatui/ratatui), [mpv](https://mpv.io) and
+- [kew](https://github.com/ravachol/kew) for the interface and keybindings 
+- [btop](https://github.com/aristocratos/btop) for the banner and the red 
+- [ytmapi-rs](https://github.com/nick42d/youtui) for the protocol layer 
+- [ratatui](https://github.com/ratatui/ratatui), [mpv](https://mpv.io) and
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) for the rest.

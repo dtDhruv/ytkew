@@ -1,6 +1,6 @@
 ---
 title: ytkew
-description: A terminal YouTube Music player, in the spirit of kew.
+description: YouTube Music on the terminal!
 template: splash
 head:
   # Starlight appends the site title to every page, which on the landing page
@@ -10,8 +10,8 @@ head:
 hero:
   title: ytkew
   tagline: |
-    A terminal YouTube Music player, in the spirit of kew — cover art, a
-    spectrum visualizer, album-derived colours, no distractions — playing
+    A terminal YouTube Music player - cover art, a
+    spectrum visualizer, album-derived colours, no distractions - playing
     from your own YouTube Music account.
   image:
     file: ../../assets/wordmark.svg
@@ -37,12 +37,7 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
   />
 </div>
 
-## Why
-
-Every YouTube Music client is either a browser tab or an Electron app. ytkew
-is neither: it is a terminal program that hands playback to **mpv**, so a slow
-redraw can never stutter the audio, and it looks and behaves like
-[kew](https://github.com/ravachol/kew), which got the interface right.
+## Features
 
 <CardGrid>
   <Card title="Full-resolution cover art" icon="star">
@@ -68,15 +63,3 @@ redraw can never stutter the audio, and it looks and behaves like
     with artwork and a seek bar.
   </Card>
 </CardGrid>
-
-## Get going
-
-```sh
-git clone https://github.com/dtDhruv/ytkew
-cd ytkew
-make install
-ytkew radiohead creep
-```
-
-Needs `mpv` and `yt-dlp` on `PATH`. Search, radio and lyrics work signed out;
-only your own library needs [credentials](/ytkew/start/signing-in/).
