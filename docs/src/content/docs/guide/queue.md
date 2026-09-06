@@ -6,6 +6,16 @@ description: Why the queue behaves the way YouTube Music's does.
 The queue is not a plain append-only list. It remembers what filled it, and
 that decides what happens when you play something else.
 
+<div class="terminal not-content">
+  <div class="terminal-bar"><i></i><i></i><i></i><span>ytkew</span></div>
+  <img
+    src="/ytkew/ytkew_queue.png"
+    alt="ytkew's queue pane: the running order with the current track highlighted at the top"
+    width="1400"
+    height="856"
+  />
+</div>
+
 | You play | What happens |
 |---|---|
 | A track from the playlist already on | Moves within the queue. The running order and anything queued behind it survive. |

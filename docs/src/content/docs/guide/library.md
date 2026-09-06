@@ -7,15 +7,15 @@ The library draws each level as its own column, in the manner of a file
 manager, so the path you walked stays on screen instead of being implied by
 indentation.
 
-```
-╭| library |──────────────────────────────────────────────────╮
-│ Liked Music      ▸│ Instrumental        ▸│ Weightless        │
-│ Library Songs    ▸│ Late nights         ▸│ Strobe            │
-│ Artists          ▸│ Running             ▸│ Nightcall         │
-│ Albums           ▸│ Rock                ▸│ Midnight City     │
-│ Playlists        ▸│ Focus               ▸│ Teardrop          │
-╰──────────────────────────────────────────────────────| 2/10 |╯
-```
+<div class="terminal not-content">
+  <div class="terminal-bar"><i></i><i></i><i></i><span>ytkew</span></div>
+  <img
+    src="/ytkew/ytkew_library.png"
+    alt="ytkew's library as columns: the top level, artists, one artist's albums, and that album's tracks"
+    width="1400"
+    height="856"
+  />
+</div>
 
 | Key | Does |
 |---|---|

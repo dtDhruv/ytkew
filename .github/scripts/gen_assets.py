@@ -10,11 +10,11 @@ Three jobs:
   website needs its own under `src/` for Astro's pipeline and another in
   `public/` for the favicon. Copying them here means changing the logo is one
   file, not three that quietly drift.
-* The screenshot. `assets/ytkew_track_1.png` is what the README shows; the
-  site needs its own copy under `public/`. Same reason as the icon: one file
-  to replace when the screenshot is retaken.
+* The screenshots. `assets/ytkew_*.png` are what the README and the guide
+  pages show; the site needs its own copies under `public/`. Same reason as
+  the icon: one file to replace when a screenshot is retaken.
 
-Run it after touching the icon, the screenshot, or `src/ui/banner.rs`:
+Run it after touching the icon, a screenshot, or `src/ui/banner.rs`:
 
     python3 .github/scripts/gen_assets.py
 
@@ -146,16 +146,16 @@ for out in (
     shutil.copyfile(ICON, out)
     print(f"copied {ICON.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
 
-# The screenshot is a capture, not something this script can draw. It is
-# copied for the same reason as the icon: so retaking it means replacing one
-# file and running this, rather than remembering there is a second copy.
+# The screenshots are captures, not something this script can draw. They are
+# copied for the same reason as the icon: so retaking one means replacing a
+# single file, rather than remembering there is a second copy of each.
 # `public/` rather than `src/assets/` because the image service is set to
 # passthrough -- Astro would not process it anyway.
-SHOT = ROOT / "assets/ytkew_track_1.png"
-if SHOT.is_file():
-    out = ROOT / "docs/public/ytkew_track_1.png"
+shots = sorted(ROOT.glob("assets/ytkew_*.png"))
+if not shots:
+    sys.exit("no assets/ytkew_*.png; the README and the guide pages need them")
+for shot in shots:
+    out = ROOT / "docs/public" / shot.name
     out.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(SHOT, out)
-    print(f"copied {SHOT.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
-else:
-    sys.exit(f"{SHOT.relative_to(ROOT)} is missing; the README and site both use it")
+    shutil.copyfile(shot, out)
+    print(f"copied {shot.relative_to(ROOT)} -> {out.relative_to(ROOT)}")

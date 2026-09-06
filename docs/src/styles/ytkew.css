@@ -33,28 +33,6 @@
   --sl-color-black: #fff;
 }
 
-/* The terminal captures are fixed-width art: they must not wrap, and they
-   have to stay legible when the viewport is narrower than they are.
-   Scrolling the block beats reflowing it into nonsense. */
-.terminal pre {
-  font-size: 0.8rem;
-  /* Exactly 1: the capture is box-drawing art, and any leading at all leaves
-     gaps between the rows so the panel borders stop joining up and the whole
-     thing looks ragged. */
-  line-height: 1;
-  white-space: pre;
-  overflow-x: auto;
-  /* Some fallback faces draw box-drawing glyphs narrower than the cell, which
-     shears the columns. Ask for the metrics the art assumes. */
-  font-variant-ligatures: none;
-  font-feature-settings: "liga" 0, "calt" 0;
-  tab-size: 8;
-}
-
-@media (max-width: 50rem) {
-  .terminal pre { font-size: 0.62rem; }
-}
-
 /* The wordmark is ytkew's own ANSI Shadow banner, emitted as vector shapes by
    .github/scripts/gen_wordmark.py. Pasting the block characters into a <pre>
    instead only holds if the visitor's monospace font tiles them exactly --
