@@ -4053,6 +4053,7 @@ dependencies = [
  "rustfft",
  "serde",
  "serde_json",
+ "sha1",
  "time",
  "tokio",
  "toml",

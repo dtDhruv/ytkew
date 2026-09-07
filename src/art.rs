@@ -23,8 +23,6 @@ use crate::palette::{extract, Palette, Rgb};
 use anyhow::{Context, Result};
 use image::imageops::FilterType;
 use image::DynamicImage;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 /// A cover rendered to a grid of half-block cells, plus the theme drawn from it.
@@ -79,9 +77,18 @@ impl CoverLoader {
 
     /// Where a cover URL is cached on disk.
     pub fn cache_path(&self, url: &str) -> PathBuf {
-        let mut h = DefaultHasher::new();
-        url.hash(&mut h);
-        self.cache.join(format!("{:016x}", h.finish()))
+        // Not `DefaultHasher`: its output is not stable across Rust
+        // releases, so a toolchain bump would re-key the cache and orphan
+        // every file already in it. Nothing here is a security boundary --
+        // the hash only has to be a stable name.
+        use sha1::{Digest, Sha1};
+        use std::fmt::Write;
+        let digest = Sha1::digest(url.as_bytes());
+        let mut name = String::with_capacity(16);
+        for byte in &digest[..8] {
+            let _ = write!(name, "{byte:02x}");
+        }
+        self.cache.join(name)
     }
 }
 
@@ -157,6 +164,41 @@ mod tests {
             }
         }
         DynamicImage::ImageRgb8(img)
+    }
+
+    #[test]
+    fn the_cache_key_does_not_move_between_builds() {
+        // Golden values: if these change, every installed cache is orphaned.
+        let l = CoverLoader::new(PathBuf::from("/c"));
+        assert_eq!(
+            l.cache_path("https://lh3.googleusercontent.com/abc=w544-h544"),
+            PathBuf::from("/c/3345d75c15932858")
+        );
+        assert_eq!(
+            l.cache_path("https://example.com/cover.jpg"),
+            PathBuf::from("/c/9be310614796c609")
+        );
+    }
+
+    #[test]
+    fn distinct_urls_get_distinct_files() {
+        let l = CoverLoader::new(PathBuf::from("/c"));
+        assert_ne!(l.cache_path("a"), l.cache_path("b"));
+    }
+
+    #[test]
+    fn the_key_is_a_fixed_width_hex_name() {
+        let l = CoverLoader::new(PathBuf::from("/c"));
+        for url in ["", "a", "https://example.com/very/long/path?x=1&y=2"] {
+            let name = l.cache_path(url);
+            let name = name.file_name().unwrap().to_str().unwrap();
+            assert_eq!(name.len(), 16, "{url}");
+            assert!(
+                name.chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+                "{name}"
+            );
+        }
     }
 
     #[test]

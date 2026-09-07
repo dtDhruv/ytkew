@@ -58,6 +58,9 @@ which = "8"
 # Already in the tree via ratatui, so this is close to free -- and beats
 # hand-rolling calendar arithmetic.
 time = { version = "0.3", features = ["local-offset"] }
+# Already in the tree via ytmapi-rs. Names cache files, where a hash that
+# changes between Rust releases would orphan every entry.
+sha1 = "0.11"
 mpris-server = { version = "0.10", features = ["tokio"] }
 base64 = "0.23.1"
 png = "0.18.1"
