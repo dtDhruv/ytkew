@@ -14,6 +14,21 @@
 
 ytkew plays music from your YouTube Music account without a browser.
 
+## Requirements
+
+`mpv` 0.30+ and `yt-dlp` on `PATH`, and a truecolor terminal — ytkew refuses
+to start without the first two. [Per-platform commands are on the
+site](https://dtdhruv.github.io/ytkew/start/install/). Search, radio and
+lyrics work signed out; only your own library needs credentials.
+
+**Linux and macOS.** On macOS the spectrum visualizer and media keys are
+unavailable — they need PipeWire and D-Bus — but everything else works the
+same. Windows is not supported yet.
+
+> [!TIP]
+> **A stale `yt-dlp` is the most common reason a working ytkew stops playing.**
+> Keep it current with `yt-dlp -U`.
+
 ## Install
 
 ```sh
@@ -48,19 +63,6 @@ The documentation is on the site:
 - MPRIS: media keys, and a now-playing panel entry with artwork.
 - Mouse support throughout.
 - Lyrics, radio, liking tracks, shuffle and repeat.
-
-## Requirements
-
-`mpv` 0.30+ and `yt-dlp` on `PATH`, and a truecolor terminal. Search, radio
-and lyrics work signed out; only your own library needs credentials.
-
-**Linux and macOS.** On macOS the spectrum visualizer and media keys are
-unavailable — they need PipeWire and D-Bus — but everything else works the
-same. Windows is not supported yet.
-
-> [!TIP]
-> **A stale `yt-dlp` is the most common reason a working ytkew stops playing.**
-> Keep it current with `yt-dlp -U`.
 
 ## Contributing
 
