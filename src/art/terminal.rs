@@ -312,20 +312,69 @@ pub fn multiplexer() -> Option<&'static str> {
 /// sized, so a multiplexer gets those unless the user has explicitly pinned a
 /// cell size to compensate.
 pub fn sixel_recommended(source: CellSource) -> bool {
-    if !terminal_supports_sixel() || !source.is_trustworthy() {
-        return false;
-    }
-    match multiplexer() {
-        // A pinned size means the user has tuned it themselves.
-        Some(_) => source == CellSource::Config,
-        None => true,
-    }
+    sixel_ok(source, terminal_supports_sixel, multiplexer().is_some())
 }
 
-/// Whether this terminal is known to render sixel. There is a DA1 query that
-/// would answer definitively, but matching the environment covers the common
-/// terminals and the config can always override.
+/// Split out from the environment lookups so it can be tested. `env_supports`
+/// is deferred because it can query the terminal, which must not happen when
+/// the answer cannot change the outcome.
+fn sixel_ok(source: CellSource, env_supports: impl FnOnce() -> bool, in_mux: bool) -> bool {
+    if !source.is_trustworthy() {
+        return false;
+    }
+    // `calibrate` proves support by drawing a probe and reading the cursor
+    // back, so a measurement outranks any list of names. A pinned `cell_px`
+    // skips the probe, so that case still needs the list.
+    if source != CellSource::Calibrated && !env_supports() {
+        return false;
+    }
+    if in_mux {
+        // A pinned size means the user has tuned it themselves.
+        return source == CellSource::Config;
+    }
+    true
+}
+
+/// Whether this terminal renders sixel.
+///
+/// Memoised because it writes to the tty and reads the answer back, which is
+/// only safe before an input reader exists.
 pub fn terminal_supports_sixel() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| env_supports_sixel() || da1_supports_sixel())
+}
+
+/// Ask the terminal directly: DA1 (`CSI c`) answers `CSI ? <attrs> c`, and
+/// attribute 4 is sixel. Works for any terminal, named or not.
+fn da1_supports_sixel() -> bool {
+    let Some(mut tty) = open_tty() else {
+        return false;
+    };
+    let Some(raw) = RawMode::enable(&tty) else {
+        return false;
+    };
+    let reply = (|| {
+        use std::io::Write;
+        tty.write_all(b"\x1b[c").ok()?;
+        tty.flush().ok()?;
+        read_reply(&mut tty, b'c', 250)
+    })();
+    drop(raw);
+    reply.is_some_and(|r| da1_lists_sixel(&r))
+}
+
+fn da1_lists_sixel(reply: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(reply);
+    let Some(start) = text.find('?') else {
+        return false;
+    };
+    let attrs = &text[start + 1..];
+    let end = attrs.find('c').unwrap_or(attrs.len());
+    attrs[..end].split(';').any(|a| a.trim() == "4")
+}
+
+/// Terminals known by name. Kept only to skip the DA1 round trip.
+fn env_supports_sixel() -> bool {
     if let Ok(p) = std::env::var("TERM_PROGRAM") {
         let p = p.to_ascii_lowercase();
         if ["wezterm", "mlterm", "contour", "iterm.app"]
@@ -391,6 +440,50 @@ mod tests {
         assert!(!CellSource::Fallback.is_trustworthy());
         assert!(CellSource::Config.is_trustworthy());
         assert!(CellSource::Calibrated.is_trustworthy());
+    }
+
+    #[test]
+    fn a_measured_size_enables_sixel_in_an_unlisted_terminal() {
+        // Absent from every list, but the probe says yes.
+        assert!(sixel_ok(CellSource::Calibrated, || false, false));
+    }
+
+    #[test]
+    fn an_unmeasured_size_still_needs_the_environment_list() {
+        // No probe ran, so nothing has proven sixel works.
+        assert!(!sixel_ok(CellSource::Config, || false, false));
+        assert!(sixel_ok(CellSource::Config, || true, false));
+    }
+
+    #[test]
+    fn a_guessed_size_never_enables_sixel_however_capable_the_terminal() {
+        for source in [CellSource::Query, CellSource::Ioctl, CellSource::Fallback] {
+            assert!(!sixel_ok(source, || true, false), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn a_measurement_does_not_override_the_multiplexer_rule() {
+        // zellij#3372: double height, and nothing reveals it.
+        assert!(!sixel_ok(CellSource::Calibrated, || true, true));
+        assert!(sixel_ok(CellSource::Config, || true, true));
+    }
+
+    #[test]
+    fn a_da1_reply_listing_attribute_four_means_sixel() {
+        assert!(da1_lists_sixel(b"\x1b[?62;4;6;9;22c"));
+        assert!(da1_lists_sixel(b"\x1b[?64;1;2;4c"));
+        assert!(da1_lists_sixel(b"\x1b[?4c"));
+    }
+
+    #[test]
+    fn a_da1_reply_without_it_does_not() {
+        assert!(!da1_lists_sixel(b"\x1b[?62;22c"));
+        assert!(!da1_lists_sixel(b"\x1b[?1;2c"));
+        // 4 must be an attribute of its own, not a digit inside one.
+        assert!(!da1_lists_sixel(b"\x1b[?62;40;14c"));
+        assert!(!da1_lists_sixel(b""));
+        assert!(!da1_lists_sixel(b"garbage"));
     }
 
     #[test]

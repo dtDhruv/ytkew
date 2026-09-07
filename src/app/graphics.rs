@@ -125,11 +125,14 @@ impl App {
                 self.graphics = Graphics::resolve(&self.cfg, self.cell_source);
             }
         }
-        if self.graphics == Graphics::None
-            && self.cfg.cover_mode == crate::config::CoverMode::Auto
-            && crate::art::terminal::terminal_supports_sixel()
-        {
-            if let Some(mux) = crate::art::terminal::multiplexer() {
+        // The multiplexer check is a cheap env read and rules this out for
+        // almost everyone; `terminal_supports_sixel` can query the terminal,
+        // so it goes last.
+        if let Some(mux) = crate::art::terminal::multiplexer() {
+            if self.graphics == Graphics::None
+                && self.cfg.cover_mode == crate::config::CoverMode::Auto
+                && crate::art::terminal::terminal_supports_sixel()
+            {
                 self.notify(format!(
                     "cover: half-blocks — sixel renders at the wrong size under {mux} \
                      (zellij#3372). Press b for sixel, then [ / ] to resize."
