@@ -25,7 +25,7 @@ use image::imageops::FilterType;
 use image::DynamicImage;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A cover rendered to a grid of half-block cells, plus the theme drawn from it.
 #[derive(Clone, Debug)]
@@ -60,6 +60,7 @@ impl CoverLoader {
         let path = self.cache_path(url);
         if let Ok(bytes) = tokio::fs::read(&path).await {
             if let Ok(img) = image::load_from_memory(&bytes) {
+                touch(&path);
                 return Ok(img);
             }
         }
@@ -82,6 +83,66 @@ impl CoverLoader {
         let mut h = DefaultHasher::new();
         url.hash(&mut h);
         self.cache.join(format!("{:016x}", h.finish()))
+    }
+}
+
+/// Bump mtime so it doubles as the LRU key -- `atime` is unreliable, since
+/// most systems mount `relatime`.
+fn touch(path: &Path) {
+    let times = std::fs::FileTimes::new().set_modified(std::time::SystemTime::now());
+    let _ = std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|f| f.set_times(times));
+}
+
+/// A cover still downloading must not be unlinked under the write.
+const WRITE_GRACE: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Drop least-recently-used covers until the cache fits in `cap_bytes`.
+///
+/// Size is the only reason to evict: the image behind a cover URL never
+/// changes, so age on its own says nothing about whether an entry is stale.
+/// Every failure is ignored -- it is a cache, and a miss just refetches.
+pub fn sweep(cache: &Path, cap_bytes: u64) {
+    if cap_bytes == 0 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(cache) else {
+        return;
+    };
+    let mut total = 0u64;
+    let mut evictable: Vec<(std::time::SystemTime, u64, PathBuf)> = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        // Counted even when not evictable, since it still occupies the budget.
+        total += meta.len();
+        let Ok(mtime) = meta.modified() else {
+            continue;
+        };
+        if mtime.elapsed().is_ok_and(|age| age < WRITE_GRACE) {
+            continue;
+        }
+        evictable.push((mtime, meta.len(), entry.path()));
+    }
+    if total <= cap_bytes {
+        return;
+    }
+    evictable.sort_by_key(|(mtime, _, _)| *mtime);
+    // Down to 90%, so a cache sitting at the cap does not sweep every launch.
+    let target = cap_bytes / 10 * 9;
+    for (_, len, path) in evictable {
+        if total <= target {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(len);
+        }
     }
 }
 
@@ -157,6 +218,68 @@ mod tests {
             }
         }
         DynamicImage::ImageRgb8(img)
+    }
+
+    /// A file of `bytes` whose mtime is `age_secs` in the past.
+    fn aged_file(dir: &Path, name: &str, bytes: usize, age_secs: u64) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, vec![0u8; bytes]).unwrap();
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(age_secs);
+        let f = std::fs::File::options().write(true).open(&path).unwrap();
+        f.set_times(std::fs::FileTimes::new().set_modified(when))
+            .unwrap();
+        path
+    }
+
+    fn temp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ytkew-sweep-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_zero_cap_means_unlimited() {
+        let d = temp("unlimited");
+        let f = aged_file(&d, "a", 4096, 99_999);
+        sweep(&d, 0);
+        assert!(f.exists(), "0 must not be read as a cap of nothing");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_cache_under_its_cap_is_left_alone() {
+        let d = temp("under");
+        let f = aged_file(&d, "a", 100, 99_999);
+        sweep(&d, 10_000);
+        assert!(f.exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_least_recently_used_cover_is_evicted_first() {
+        let d = temp("lru");
+        let old = aged_file(&d, "old", 200, 30_000);
+        let mid = aged_file(&d, "mid", 200, 20_000);
+        let new = aged_file(&d, "new", 200, 10_000);
+        // 600 bytes against a 300 cap, so it evicts down to 270.
+        sweep(&d, 300);
+        assert!(!old.exists(), "oldest should go first");
+        assert!(!mid.exists(), "then the next oldest");
+        assert!(new.exists(), "most recently used must survive");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_cover_written_moments_ago_is_never_evicted() {
+        let d = temp("grace");
+        let old = aged_file(&d, "old", 200, 99_999);
+        let fresh = aged_file(&d, "fresh", 200, 0);
+        // Far over cap, but a download in flight must not be unlinked.
+        sweep(&d, 100);
+        assert!(!old.exists());
+        assert!(fresh.exists(), "grace window must protect a live write");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

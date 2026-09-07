@@ -165,6 +165,8 @@ pub struct Config {
     /// Terminal cell size in pixels, as `[width, height]`. Leave at [0, 0] to
     /// detect it; set it only if sixel art comes out the wrong size.
     pub cell_px: [u16; 2],
+    /// Cap on the cover cache in MB. 0 means unlimited.
+    pub cover_cache_mb: u64,
     pub hide_help: bool,
     /// Volume used on a first run, before any state has been saved.
     /// Where to find yt-dlp. Empty searches PATH.
@@ -202,6 +204,7 @@ impl Default for Config {
             cover_enabled: true,
             cover_mode: CoverMode::Auto,
             cell_px: [0, 0],
+            cover_cache_mb: 200,
             hide_help: false,
             ytdlp_path: String::new(),
             keys: crate::config::keymap::KeyPreset::Kew,
@@ -265,6 +268,8 @@ cover_mode = "auto"           # which renderer to use for album art:
                               # `b` shows and hides the art; it does not
                               # change the renderer. Cycle renderers from the
                               # escape menu.
+cover_cache_mb = 200          # cap on ~/.cache/ytkew. 0 = unlimited.
+                              # Least-recently-used covers go first.
 cell_px = [0, 0]              # cell size in px for sixel. [0,0] = unset.
                               # Easiest way to set it: run ytkew, press `b`
                               # until you see sixel, then `[` and `]` to

@@ -54,6 +54,12 @@ pub async fn run(cli: Cli) -> Result<()> {
         .context("starting playback")?;
     let (tx, mut app_rx) = mpsc::unbounded_channel::<AppMsg>();
     let covers = Arc::new(CoverLoader::new(api::cache_dir()));
+    // Background: reclaims disk, reports nothing, and must never delay startup.
+    {
+        let dir = api::cache_dir();
+        let cap = cfg.cover_cache_mb.saturating_mul(1024 * 1024);
+        tokio::task::spawn_blocking(move || crate::art::sweep(&dir, cap));
+    }
 
     let mut app = App::new(cfg, state, themes, api.clone(), player, covers, tx.clone());
     for problem in theme_problems {
