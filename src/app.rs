@@ -27,6 +27,7 @@ pub use search::{SearchFilter, SearchHit, SEARCH_FILTERS};
 use crate::api::Api;
 use crate::art::{Cover, CoverLoader};
 use crate::config::{Config, Keymap};
+use crate::lyrics::Lyrics;
 use crate::model::Track;
 use crate::mpris::Mpris;
 use crate::palette::Palette;
@@ -93,7 +94,7 @@ pub enum AppMsg {
     },
     Lyrics {
         video_id: String,
-        text: String,
+        lyrics: Lyrics,
     },
     Error(String),
 }
@@ -132,9 +133,15 @@ pub struct App {
     pub search_sel: usize,
     pub searching: bool,
 
-    pub lyrics: Option<String>,
+    pub lyrics: Option<Lyrics>,
     pub lyrics_for: Option<String>,
     pub lyrics_scroll: u16,
+    /// Visible lyric rows from the last frame; the per-frame sync in run.rs
+    /// centres on the previous frame's height, which converges immediately.
+    pub(crate) lyrics_viewport_h: u16,
+    /// Auto-follow on (`sync_lyrics` recenters every frame) vs pinned by a
+    /// manual scroll (the user is reading, so per-frame sync stays off).
+    pub(crate) lyrics_follow: bool,
 
     pub status: Option<(String, Instant)>,
     pub should_quit: bool,
@@ -279,6 +286,9 @@ impl App {
             lyrics: None,
             lyrics_for: None,
             lyrics_scroll: 0,
+            lyrics_viewport_h: 20,
+            // Follow by default; a manual scroll pins until recenter/track change.
+            lyrics_follow: true,
             status: None,
             should_quit: false,
             cell_px: cfg_cell_px,
@@ -401,6 +411,8 @@ impl App {
         self.lyrics = None;
         self.lyrics_for = None;
         self.lyrics_scroll = 0;
+        // A new track follows by default until the user pins it manually.
+        self.lyrics_follow = true;
         self.cover = None;
         self.cover_for = Some(track.video_id.clone());
         self.clear_cover_art();
@@ -430,6 +442,34 @@ impl App {
                 });
             }
         }
+    }
+
+    /// Re-center `lyrics_scroll` on the line playing now. Called once per
+    /// frame from `run.rs`; plain lyrics have no timestamps so they are left
+    /// wherever the user put them.
+    pub(crate) fn sync_lyrics(&mut self, viewport_h: u16) {
+        // Both must allow follow: the config gate and the manual pin.
+        if !self.cfg.lyrics_recenter || !self.lyrics_follow {
+            return;
+        }
+        let Some(lyrics) = self.lyrics.as_ref() else {
+            return;
+        };
+        if !lyrics.is_synced {
+            return;
+        }
+        let pos = self.player_state.time_pos;
+        // mpv reports NaN while a stream is resolving, and a seek can briefly
+        // read negative; either would cast to a huge u32 and fling the scroll.
+        if !pos.is_finite() || pos < 0.0 {
+            return;
+        }
+        let Some(active) = lyrics.line_for((pos * 1000.0) as u32) else {
+            return;
+        };
+        let centered = active.saturating_sub(viewport_h as usize / 2);
+        let max = lyrics.lines.len().saturating_sub(viewport_h as usize);
+        self.lyrics_scroll = centered.min(max) as u16;
     }
 
     pub async fn next_track(&mut self) {
@@ -622,10 +662,12 @@ impl App {
                     self.cover = Some(*cover);
                 }
             }
-            AppMsg::Lyrics { video_id, text } => {
+            AppMsg::Lyrics { video_id, lyrics } => {
                 if self.queue.current().map(|t| t.video_id.as_str()) == Some(video_id.as_str()) {
                     self.lyrics_for = Some(video_id);
-                    self.lyrics = Some(text);
+                    self.lyrics = Some(lyrics);
+                    // Fresh lyrics follow by default until the user pins them.
+                    self.lyrics_follow = true;
                 }
             }
             AppMsg::Error(e) => {

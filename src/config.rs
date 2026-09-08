@@ -191,6 +191,11 @@ pub struct Config {
     /// Append a radio mix when a bare search is played, so one song does not
     /// leave you in silence.
     pub autoplay_radio: bool,
+    /// Centre lyric lines in the lyrics view.
+    pub lyrics_centered: bool,
+    /// Keep the playing line centred as synced lyrics advance. Off leaves
+    /// the scroll where j/k put it.
+    pub lyrics_recenter: bool,
 }
 
 impl Default for Config {
@@ -217,6 +222,8 @@ impl Default for Config {
             accent_color: 6,
             save_repeat_shuffle: false,
             autoplay_radio: true,
+            lyrics_centered: true,
+            lyrics_recenter: true,
         }
     }
 }
@@ -307,6 +314,8 @@ seek_step = 5.0
 
 autoplay_radio = true         # append a radio mix behind a played search hit
 save_repeat_shuffle = false   # remember shuffle/repeat across restarts
+lyrics_centered = true        # centre lyric lines in the lyrics view
+lyrics_recenter = true        # keep the playing line centred as synced lyrics advance
 hide_help = false
 "##;
 
@@ -333,6 +342,8 @@ mod tests {
         assert_eq!(c.accent_color, 6);
         assert!(c.color_from_cover);
         assert!(c.autoplay_radio);
+        assert!(c.lyrics_centered);
+        assert!(c.lyrics_recenter);
     }
 
     #[test]
@@ -343,6 +354,9 @@ mod tests {
         // Untouched fields fall back to the struct default, not zero.
         assert_eq!(c.visualizer_height, 6);
         assert_eq!(c.volume_step, 5.0);
+        // New lyrics keys are no different: an old file without them parses.
+        assert!(c.lyrics_centered);
+        assert!(c.lyrics_recenter);
     }
 
     #[test]

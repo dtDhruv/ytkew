@@ -298,6 +298,7 @@ fn pane_hints(app: &App) -> Vec<(String, &'static str)> {
         ],
         View::Lyrics => vec![
             (pair(Action::ScrollDown, Action::ScrollUp, "j/k"), "scroll"),
+            (key(Action::RecenterLyrics, "c"), "recenter"),
             (key(Action::NextView, "tab"), "back"),
         ],
         View::Help => vec![(key(Action::NextView, "tab"), "back")],
