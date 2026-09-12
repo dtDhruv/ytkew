@@ -301,6 +301,7 @@ impl Mpris {
     /// only for those properties.
     pub async fn publish(&self, next: MprisState) {
         let mut changed: Vec<Property> = Vec::new();
+        let mut track_changed = false;
         {
             let Ok(cur) = self.state.read() else { return };
             if cur.status != next.status {
@@ -308,6 +309,12 @@ impl Mpris {
             }
             if cur.track_key != next.track_key {
                 changed.push(Property::Metadata(next.metadata.clone()));
+                // Reset position if the track itself changed (not just cover art arriving)
+                let cur_vid = cur.track_key.split('|').next().unwrap_or("");
+                let next_vid = next.track_key.split('|').next().unwrap_or("");
+                if cur_vid != next_vid {
+                    track_changed = true;
+                }
             }
             if (cur.volume - next.volume).abs() > f64::EPSILON {
                 changed.push(Property::Volume(next.volume));
@@ -335,16 +342,23 @@ impl Mpris {
         if changed.is_empty() {
             return;
         }
-        // Keep the position we already have; `next` carries a stale one.
-        let position = self
-            .state
-            .read()
-            .map(|s| s.position)
-            .unwrap_or(Time::from_micros(0));
+        // If the track changed, reset position to the start; otherwise keep
+        // the position we already have (since `next` carries a stale one).
+        let position = if track_changed {
+            next.position
+        } else {
+            self.state
+                .read()
+                .map(|s| s.position)
+                .unwrap_or(Time::from_micros(0))
+        };
         if let Ok(mut s) = self.state.write() {
             *s = MprisState { position, ..next };
         }
         let _ = self.server.properties_changed(changed).await;
+        if track_changed {
+            let _ = self.server.emit(Signal::Seeked { position }).await;
+        }
     }
 
     /// Tell clients the position jumped, so their progress bars resync.
