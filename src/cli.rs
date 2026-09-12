@@ -231,6 +231,24 @@ pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
         std::env::var("TERM").unwrap_or_default(),
         std::env::var("TERM_PROGRAM").unwrap_or_default()
     );
+    // Several terminals are invisible in the line above, identifying
+    // themselves only through their own variable.
+    for key in [
+        "KONSOLE_VERSION",
+        "VTE_VERSION",
+        "KITTY_WINDOW_ID",
+        "WEZTERM_PANE",
+        "ALACRITTY_WINDOW_ID",
+        "GHOSTTY_BIN_DIR",
+        "ITERM_SESSION_ID",
+        "CONTOUR_VERSION",
+        "WT_SESSION",
+        "TERMUX_VERSION",
+    ] {
+        if let Ok(v) = std::env::var(key) {
+            println!("  {key}={v}");
+        }
+    }
     println!(
         "  multiplexer:     {}",
         art::terminal::multiplexer().unwrap_or("none")
