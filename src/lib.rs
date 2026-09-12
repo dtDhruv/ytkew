@@ -43,6 +43,7 @@ pub mod browser;
 pub mod cli;
 pub mod config;
 pub mod desktop;
+pub mod lyrics;
 pub mod model;
 pub mod mpris;
 pub mod palette;

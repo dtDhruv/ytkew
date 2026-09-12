@@ -41,6 +41,8 @@ pub enum Action {
     ShowSearch,
     ShowHelp,
     ShowLyrics,
+    /// Jump the lyrics scroll back to the line playing now.
+    RecenterLyrics,
     NextView,
     PrevView,
     CycleVisualizer,
@@ -173,6 +175,7 @@ impl Keymap {
             (F(5), NONE, ShowSearch),
             (F(6), NONE, ShowHelp),
             (Char('m'), NONE, ShowLyrics),
+            (Char('c'), NONE, RecenterLyrics),
             (Char('/'), NONE, ShowSearch),
             // Exit
             (Char('P'), SHIFT, PlayAll),
@@ -264,6 +267,9 @@ impl Keymap {
             (F(5), NONE, ShowSearch),
             (F(6), NONE, ShowHelp),
             (Char('m'), NONE, ShowLyrics),
+            // `c` already toggles cover art here, so recenter takes `z`:
+            // vim's own center-the-screen key.
+            (Char('z'), NONE, RecenterLyrics),
             (Char('/'), NONE, ShowSearch),
             (Char('P'), SHIFT, PlayAll),
             (Esc, NONE, ToggleMenu),
@@ -467,6 +473,7 @@ mod tests {
                 Action::Enqueue,
                 Action::ShowSearch,
                 Action::ShowLibrary,
+                Action::RecenterLyrics,
             ] {
                 assert!(
                     !km.keys_for(action).is_empty(),
@@ -484,6 +491,32 @@ mod tests {
         assert_eq!(KeyPreset::from_name("VIM"), KeyPreset::Vim);
         // An unknown preset falls back rather than leaving the app keyless.
         assert_eq!(KeyPreset::from_name("nonsense"), KeyPreset::Kew);
+    }
+
+    #[test]
+    fn recenter_lyrics_key_differs_where_c_is_taken() {
+        let kew = Keymap::for_preset(KeyPreset::Kew);
+        assert_eq!(
+            kew.resolve(KeyCode::Char('c'), KeyModifiers::NONE),
+            Some(Action::RecenterLyrics)
+        );
+        assert!(kew
+            .keys_for(Action::RecenterLyrics)
+            .contains(&"c".to_string()));
+        let vim = Keymap::for_preset(KeyPreset::Vim);
+        // `c` toggles cover art in the vim preset, so it keeps that meaning
+        // and recenter lives on `z` instead.
+        assert_eq!(
+            vim.resolve(KeyCode::Char('c'), KeyModifiers::NONE),
+            Some(Action::ToggleAscii)
+        );
+        assert_eq!(
+            vim.resolve(KeyCode::Char('z'), KeyModifiers::NONE),
+            Some(Action::RecenterLyrics)
+        );
+        assert!(vim
+            .keys_for(Action::RecenterLyrics)
+            .contains(&"z".to_string()));
     }
 
     #[test]
