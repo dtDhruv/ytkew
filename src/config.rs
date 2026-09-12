@@ -129,6 +129,18 @@ impl CoverMode {
     pub fn draws_anything(self) -> bool {
         !matches!(self, CoverMode::Off)
     }
+
+    /// `None` for empty or unknown input, meaning "use the config".
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(CoverMode::Auto),
+            "kitty" => Some(CoverMode::Kitty),
+            "sixel" => Some(CoverMode::Sixel),
+            "blocks" => Some(CoverMode::Blocks),
+            "off" => Some(CoverMode::Off),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]

@@ -156,7 +156,17 @@ pub async fn run_auth(method: &str, cfg_dir: &std::path::Path) -> Result<()> {
 pub async fn run_diagnose(cfg_dir: &std::path::Path) -> Result<()> {
     // Probe first: the measurement needs a screen it can draw on without
     // scrolling, so it must happen before anything is printed.
+    // State outranks the config for both of these, exactly as run.rs applies
+    // them, or this reports settings the running app does not use.
     let cfg_probe = config::Config::load(cfg_dir);
+    let state_probe = config::State::load(cfg_dir, &cfg_probe);
+    let mut cfg_probe = cfg_probe;
+    if cfg_probe.cell_px == [0, 0] && state_probe.cover_cell != [0, 0] {
+        cfg_probe.cell_px = state_probe.cover_cell;
+    }
+    if let Some(mode) = config::CoverMode::from_name(&state_probe.cover_mode) {
+        cfg_probe.cover_mode = mode;
+    }
     let ((cw, ch), src) = art::terminal::detect_cell_size(match cfg_probe.cell_px {
         [w, h] if w > 0 && h > 0 => Some((w, h)),
         _ => None,

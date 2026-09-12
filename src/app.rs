@@ -158,6 +158,9 @@ pub struct App {
     pub cover_visible: bool,
     /// Active theme name. "cover" means take the colours from the artwork.
     pub theme: String,
+    /// Renderer picked from the menu this session or a previous one. `None`
+    /// means the menu was never used and `config.toml` stays in charge.
+    pub cover_mode_override: Option<crate::config::CoverMode>,
     /// Built-in themes plus anything the user dropped in `themes/`.
     pub themes: crate::theme::Themes,
 
@@ -227,6 +230,12 @@ impl App {
                 _ => RepeatMode::Off,
             };
         }
+        // A menu choice outranks the config. Must precede `Graphics::resolve`.
+        let cover_mode_override = crate::config::CoverMode::from_name(&state.cover_mode);
+        let mut cfg = cfg;
+        if let Some(mode) = cover_mode_override {
+            cfg.cover_mode = mode;
+        }
         let cfg_accent = cfg.accent_color;
         // First run falls back to the config's default; after that the
         // remembered toggle wins.
@@ -288,6 +297,7 @@ impl App {
             pending_seek: None,
             cover_visible: state_cover_visible,
             theme: active_theme,
+            cover_mode_override,
             themes,
             menu_open: false,
             side_pane_open: false,
@@ -321,6 +331,10 @@ impl App {
             },
             cover_visible: self.cover_visible,
             theme: self.theme.clone(),
+            cover_mode: self
+                .cover_mode_override
+                .map(|m| m.name().to_string())
+                .unwrap_or_default(),
             shuffle: self.queue.shuffle,
             repeat: match self.queue.repeat {
                 RepeatMode::All => "all".into(),

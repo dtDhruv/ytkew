@@ -220,6 +220,7 @@ impl App {
                     "blocks" => CoverMode::Blocks,
                     _ => CoverMode::Auto,
                 };
+                self.cover_mode_override = Some(self.cfg.cover_mode);
                 self.graphics = Graphics::resolve(&self.cfg, self.cell_source);
             }
             Setting::ShowCover => {
