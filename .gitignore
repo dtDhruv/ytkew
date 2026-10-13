@@ -4,3 +4,5 @@
 # machine that would normally filter them out with a global ignore is not
 # necessarily the one you are committing from.
 .DS_Store
+config.bat
+node_modules
