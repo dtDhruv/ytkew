@@ -27,12 +27,23 @@ const WANTED: &[&str] = &[
     "SID",
     "__Secure-1PSID",
     "__Secure-3PSID",
+    // Google pairs the session identifier with these confirmation and
+    // timestamp cookies. Sending only SID/PSID lets a request look like a
+    // browser session while the YouTube Music API still treats it as logged
+    // out.
+    "SIDCC",
+    "__Secure-1PSIDCC",
+    "__Secure-3PSIDCC",
+    "__Secure-1PSIDTS",
+    "__Secure-3PSIDTS",
     "HSID",
     "SSID",
     "APISID",
     "LOGIN_INFO",
     "PREF",
     "VISITOR_INFO1_LIVE",
+    "VISITOR_PRIVACY_METADATA",
+    "CONSISTENCY",
     "YSC",
 ];
 
