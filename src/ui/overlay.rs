@@ -1,7 +1,7 @@
 //! Things drawn on top of a view: the menu, options, help and lyrics.
 
 use crate::app::App;
-use ratatui::layout::Rect;
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph, Widget};
@@ -206,6 +206,9 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect, app: &App) {
         ("Track view", k(ShowTrack)),
         ("Search view", k(ShowSearch)),
         ("Lyrics", k(ShowLyrics)),
+        ("Scroll lyrics up", k(ScrollUp)),
+        ("Scroll lyrics down", k(ScrollDown)),
+        ("Recenter lyrics", k(RecenterLyrics)),
         ("Help", k(ShowHelp)),
         ("Cycle views", k(NextView)),
         ("Quit", k(Quit)),
@@ -260,12 +263,55 @@ pub(super) fn draw_lyrics(f: &mut Frame, area: Rect, app: &App) {
     let Some(text) = &app.lyrics else {
         return centered_message(f, area, "fetching lyrics…");
     };
+    // Centre only when asked; the helper keeps the borrow checker happy
+    // across both branches below.
+    let align = |line: Line<'static>| {
+        if app.cfg.lyrics_centered {
+            line.alignment(Alignment::Center)
+        } else {
+            line
+        }
+    };
     let dim = app.palette.secondary().to_color();
+    if !text.is_synced {
+        let lines: Vec<Line> = text
+            .raw
+            .lines()
+            .skip(app.lyrics_scroll as usize)
+            .take(area.height as usize)
+            .map(|l| {
+                align(Line::from(Span::styled(
+                    l.to_string(),
+                    Style::default().fg(dim),
+                )))
+            })
+            .collect();
+        Paragraph::new(lines).render(area, f.buffer_mut());
+        return;
+    }
+    // mpv reports NaN while a stream is resolving; without the guard the
+    // cast below would highlight a garbage row for one frame.
+    let pos = app.player_state.time_pos;
+    let active = if pos.is_finite() && pos >= 0.0 {
+        text.line_for((pos * 1000.0) as u32)
+    } else {
+        None
+    };
+    let accent = app.palette.accent().to_color();
     let lines: Vec<Line> = text
-        .lines()
+        .lines
+        .iter()
+        .enumerate()
         .skip(app.lyrics_scroll as usize)
         .take(area.height as usize)
-        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(dim))))
+        .map(|(i, l)| {
+            let style = if Some(i) == active {
+                Style::default().fg(accent).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(dim)
+            };
+            align(Line::from(Span::styled(l.text.clone(), style)))
+        })
         .collect();
     Paragraph::new(lines).render(area, f.buffer_mut());
 }

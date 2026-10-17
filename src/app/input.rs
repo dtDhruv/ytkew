@@ -186,7 +186,11 @@ impl App {
 
     pub(crate) fn move_selection(&mut self, delta: isize) {
         if self.view == View::Lyrics {
+            // Manual scroll; Action::RecenterLyrics jumps back to the line
+            // playing now.
             self.lyrics_scroll = self.lyrics_scroll.saturating_add_signed(delta as i16);
+            // Pin the view so per-frame auto-follow stops fighting the user.
+            self.lyrics_follow = false;
             return;
         }
         // In columns, up and down stay within one level. Walking into
@@ -203,6 +207,36 @@ impl App {
             let next = (*sel as isize + delta).clamp(0, len as isize - 1);
             *sel = next as usize;
         }
+    }
+
+    /// One-shot jump back to the line playing now. Unlike `sync_lyrics`
+    /// this ignores `cfg.lyrics_recenter`, so the key works with
+    /// auto-center off; plain lyrics have no timestamps, so they reset
+    /// to the top.
+    pub(crate) fn recenter_lyrics(&mut self) {
+        // Resume auto-follow first: harmless when lyrics is None, and correct
+        // for when they arrive later.
+        self.lyrics_follow = true;
+        let Some(lyrics) = self.lyrics.as_ref() else {
+            return;
+        };
+        if !lyrics.is_synced {
+            self.lyrics_scroll = 0;
+            return;
+        }
+        let pos = self.player_state.time_pos;
+        // Same guard as `sync_lyrics`: NaN while resolving, or a briefly
+        // negative seek, would cast to a huge u32 and fling the scroll.
+        if !pos.is_finite() || pos < 0.0 {
+            return;
+        }
+        let Some(active) = lyrics.line_for((pos * 1000.0) as u32) else {
+            return;
+        };
+        let h = self.lyrics_viewport_h as usize;
+        let centered = active.saturating_sub(h / 2);
+        let max = lyrics.lines.len().saturating_sub(h);
+        self.lyrics_scroll = centered.min(max) as u16;
     }
 
     /// Jump to the first or last entry of the focused list.
@@ -444,6 +478,11 @@ impl App {
             Action::ShowLyrics => {
                 self.set_view(View::Lyrics);
                 self.ensure_lyrics();
+            }
+            Action::RecenterLyrics => {
+                if self.view == View::Lyrics {
+                    self.recenter_lyrics();
+                }
             }
             Action::ScrollUp => self.move_selection(-1),
             Action::ScrollDown => self.move_selection(1),

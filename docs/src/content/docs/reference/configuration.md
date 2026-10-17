@@ -32,6 +32,8 @@ still starts.
 | `volume_step` | `5.0` | Percent per keypress. |
 | `seek_step` | `5.0` | Seconds per keypress. |
 | `autoplay_radio` | `true` | Append a radio mix behind a played search hit. |
+| `lyrics_centered` | `true` | Centre lyric lines in the lyrics view. |
+| `lyrics_recenter` | `true` | Keep the playing line centred as synced lyrics advance. |
 | `save_repeat_shuffle` | `false` | Remember them across restarts. |
 | `accent_color` | `6` | ANSI index, used only as a last resort. |
 | `theme_colors` | — | Three hex strings, with `theme = "custom"`. |

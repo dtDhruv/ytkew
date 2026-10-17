@@ -295,21 +295,26 @@ impl App {
         let api = self.api.clone();
         let tx = self.tx.clone();
         let vid = track.video_id.clone();
+        let title = track.title.clone();
+        let artist = track.artist.clone();
+        let album = track.album.clone();
+        let duration_secs = track
+            .duration
+            .unwrap_or_default()
+            .clamp(0.0, u64::MAX as f64) as u64;
         tokio::spawn(async move {
-            match api.lyrics(&vid).await {
-                Ok(text) => {
-                    let _ = tx.send(AppMsg::Lyrics {
-                        video_id: vid,
-                        text,
-                    });
-                }
-                Err(_) => {
-                    let _ = tx.send(AppMsg::Lyrics {
-                        video_id: vid,
-                        text: "no lyrics found".into(),
-                    });
-                }
-            }
+            let lyrics = crate::lyrics::fetch_lyrics(
+                &title,
+                &artist,
+                album.as_deref(),
+                duration_secs,
+                async { api.lyrics(&vid).await.ok() },
+            )
+            .await;
+            let _ = tx.send(AppMsg::Lyrics {
+                video_id: vid,
+                lyrics,
+            });
         });
     }
 

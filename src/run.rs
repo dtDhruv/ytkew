@@ -115,6 +115,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         // Pull the latest transport state before drawing so the progress bar
         // and clock never lag a frame behind.
         app.player_state = app.player.state().await;
+        // Pure arithmetic: re-center synced lyrics on the playing line using
+        // the last frame's viewport height.
+        let viewport_h = app.lyrics_viewport_h;
+        app.sync_lyrics(viewport_h);
         // Take the cover off screen before drawing anything that has to appear
         // over it. A pixel image is not part of the cell grid, so this has to
         // happen ahead of the frame -- blanking afterwards would erase what
@@ -127,6 +131,12 @@ pub async fn run(cli: Cli) -> Result<()> {
             Ok(completed) => completed.area,
             Err(e) => break Err(e.into()),
         };
+        // Record the lyric viewport for the next frame's sync: body height
+        // minus the panel borders. Stale by one frame at most, and sync
+        // clamps, so a resize converges on the very next frame.
+        app.lyrics_viewport_h = ui::layout::body_rect(frame_area, &app)
+            .height
+            .saturating_sub(2);
         // Pixel graphics live outside ratatui's model, so the cover is written
         // after the frame, into cells the renderer deliberately skipped.
         if app.view == ui::View::Track && app.graphics_active() {
