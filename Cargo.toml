@@ -31,13 +31,12 @@ license = "GPL-3.0-or-later"
 
 [features]
 default = ["browser-cookies"]
-# Reads the Firefox cookie store so `ytkew auth browser` can find an existing
-# YouTube Music login. Pulls in a bundled SQLite; turn it off for a leaner
-# build and use `ytkew --auth cookie` instead.
-browser-cookies = ["dep:rusqlite"]
+# Reads browser cookie stores, including Chromium's encrypted stores via rookie.
+# Turn it off for a leaner build and use `ytkew --auth cookie` instead.
+browser-cookies = ["dep:rusqlite", "dep:rookie"]
 
 [dependencies]
-ytmapi-rs = "0.3"
+ytmapi-rs = { version = "0.3", features = ["reqwest"] }
 ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "net", "sync", "time", "fs", "signal"] }
@@ -61,7 +60,9 @@ time = { version = "0.3", features = ["local-offset"] }
 mpris-server = { version = "0.10", features = ["tokio"] }
 base64 = "0.23.1"
 png = "0.18.1"
-rusqlite = { version = "0.40", features = ["bundled"], optional = true }
+# Match rookie's SQLite binding: Cargo allows only one libsqlite3-sys version.
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+rookie = { version = "0.5.6", optional = true }
 
 # Lint levels live here rather than in CLI flags, so `cargo clippy` locally
 # and in CI agree without anyone remembering the arguments. CI runs clippy

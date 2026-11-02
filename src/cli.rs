@@ -15,10 +15,11 @@ pub struct Cli {
     #[arg(trailing_var_arg = true)]
     pub query: Vec<String>,
 
-    /// Set up credentials: `browser` lifts an existing Firefox login,
+    /// Set up credentials: `browser` reads a signed-in browser session,
     /// `cookie` takes a pasted header, `oauth` runs a device flow.
-    #[arg(long, value_name = "METHOD")]
-    pub auth: Option<String>,
+    /// After `browser`, optionally name a browser (defaults to Firefox).
+    #[arg(long, num_args = 1..=2, value_names = ["METHOD", "BROWSER"])]
+    pub auth: Option<Vec<String>>,
 
     /// Report what the API can see with the current credentials.
     #[arg(long)]
@@ -58,70 +59,47 @@ pub fn run_desktop_entry(install: bool) -> Result<()> {
 
 /// Guided credential setup. Kept deliberately chatty -- this is the one part
 /// of the app the user only touches when something is confusing.
-pub async fn run_auth(method: &str, cfg_dir: &std::path::Path) -> Result<()> {
+pub async fn run_auth(
+    method: &str,
+    browser: Option<&str>,
+    cfg_dir: &std::path::Path,
+) -> Result<()> {
+    if browser.is_some() && method != "browser" {
+        anyhow::bail!("a browser name is only accepted after --auth browser");
+    }
     std::fs::create_dir_all(cfg_dir)?;
     match method {
         "browser" => {
-            println!("Looking for a signed-in YouTube Music session in Firefox…");
-            let found = crate::browser::find_cookies()?;
-            println!("  profile: {}", found.profile.display());
-            println!("  cookies: {}", found.names.join(", "));
+            let header = if let Some(name) = browser {
+                println!("Looking for a signed-in YouTube Music session in {name}…");
+                crate::browser::extract_from_browser(name)?
+            } else {
+                println!("Looking for a signed-in YouTube Music session in Firefox…");
+                let found = crate::browser::find_cookies()?;
+                println!("  profile: {}", found.profile.display());
+                println!("  cookies: {}", found.names.join(", "));
+                found.header
+            };
             println!();
-            // Same validation as a pasted header: a cookie that reads fine
-            // but the API rejects is worse than no cookie at all.
-            print!("checking… ");
-            use std::io::Write;
-            std::io::stdout().flush().ok();
-            match ytmapi_rs::YtMusic::from_cookie(&found.header).await {
-                Ok(yt) => match yt.get_library_playlists().await {
-                    Ok(pls) => {
-                        let path = cfg_dir.join("cookie.txt");
-                        write_secret(&path, found.header.as_bytes())?;
-                        println!("ok — {} playlists visible", pls.len());
-                        println!("saved to {}", path.display());
-                    }
-                    Err(e) => anyhow::bail!("the browser's cookies were rejected by the API: {e}"),
-                },
-                Err(e) => anyhow::bail!("the browser's cookies could not be parsed: {e}"),
-            }
+            validate_and_save_cookie(&header, cfg_dir).await?;
         }
         "cookie" => {
             println!("YouTube Music cookie setup");
             println!();
-            println!("If you use Firefox, `ytkew --auth browser` does this for you.");
+            println!("Use `ytkew --auth browser [NAME]` to read cookies automatically.");
             println!();
             println!("  1. Open https://music.youtube.com in your browser, signed in.");
             println!("  2. Open devtools (F12) -> Network tab.");
             println!("  3. Click any request to music.youtube.com.");
             println!("  4. Under Request Headers, copy the entire 'Cookie' value.");
             println!();
-            println!("Paste it here and press enter:");
-
-            let mut cookie = String::new();
-            std::io::stdin()
-                .read_line(&mut cookie)
-                .context("reading cookie from stdin")?;
+            let cookie = read_cookie()?;
             let cookie = cookie.trim();
             if cookie.is_empty() {
                 anyhow::bail!("no cookie provided");
             }
 
-            // Validate before saving, so a bad paste fails now and not later.
-            print!("checking… ");
-            use std::io::Write;
-            std::io::stdout().flush().ok();
-            match ytmapi_rs::YtMusic::from_cookie(cookie).await {
-                Ok(yt) => match yt.get_library_playlists().await {
-                    Ok(pls) => {
-                        let path = cfg_dir.join("cookie.txt");
-                        write_secret(&path, cookie.as_bytes())?;
-                        println!("ok — {} playlists visible", pls.len());
-                        println!("saved to {}", path.display());
-                    }
-                    Err(e) => anyhow::bail!("cookie was rejected by the API: {e}"),
-                },
-                Err(e) => anyhow::bail!("cookie could not be parsed: {e}"),
-            }
+            validate_and_save_cookie(cookie, cfg_dir).await?;
         }
         "oauth" => {
             println!("OAuth setup needs a Google Cloud OAuth client of type");
@@ -132,7 +110,7 @@ pub async fn run_auth(method: &str, cfg_dir: &std::path::Path) -> Result<()> {
             print!("Client secret: ");
             let client_secret = read_line()?;
 
-            let client = ytmapi_rs::Client::new().context("building http client")?;
+            let client = api::http_client().context("building http client")?;
             let (code, url) = ytmapi_rs::generate_oauth_code_and_url(&client, &client_id).await?;
             println!();
             println!("Go to {url}, finish the login, then press enter here.");
@@ -148,6 +126,20 @@ pub async fn run_auth(method: &str, cfg_dir: &std::path::Path) -> Result<()> {
             anyhow::bail!("unknown auth method {other:?} (use 'browser', 'cookie' or 'oauth')")
         }
     }
+    Ok(())
+}
+
+async fn validate_and_save_cookie(cookie: &str, cfg_dir: &std::path::Path) -> Result<()> {
+    use std::io::Write;
+    print!("checking… ");
+    std::io::stdout().flush().ok();
+    api::validate_cookie_session(cookie)
+        .await
+        .context("login failed; existing credentials were kept")?;
+    let path = cfg_dir.join("cookie.txt");
+    write_secret(&path, cookie.as_bytes())?;
+    println!("ok — signed-in session verified");
+    println!("saved to {}", path.display());
     Ok(())
 }
 
@@ -402,10 +394,163 @@ fn write_secret(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn read_cookie() -> Result<String> {
+    use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+    use std::io::{IsTerminal, Write};
+
+    if !std::io::stdin().is_terminal() {
+        let mut cookie = String::new();
+        std::io::stdin().read_line(&mut cookie)?;
+        return Ok(cookie);
+    }
+
+    // Canonical terminal input truncates long cookies before read_line sees them.
+    let tty = art::terminal::open_tty().context("opening terminal for cookie input")?;
+    let raw = art::terminal::RawMode::enable(&tty).context("enabling cookie input")?;
+    crossterm::execute!(std::io::stdout(), EnableBracketedPaste)?;
+    print!("Paste it here and press enter (input hidden):\r\n");
+    let result = std::io::stdout()
+        .flush()
+        .map_err(anyhow::Error::from)
+        .and_then(|()| read_cookie_events(crossterm::event::read));
+    let cleanup = crossterm::execute!(std::io::stdout(), DisableBracketedPaste);
+    drop(raw);
+    println!();
+    let cookie = result?;
+    cleanup?;
+    Ok(cookie)
+}
+
+fn read_cookie_events(
+    mut read: impl FnMut() -> std::io::Result<crossterm::event::Event>,
+) -> Result<String> {
+    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+    let mut cookie = String::new();
+    loop {
+        match read()? {
+            Event::Paste(text) => cookie.push_str(&text),
+            Event::Key(key) if key.kind != KeyEventKind::Release => match key.code {
+                KeyCode::Enter => return Ok(cookie),
+                KeyCode::Char('c' | 'd') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    anyhow::bail!("cookie input cancelled");
+                }
+                KeyCode::Backspace => {
+                    cookie.pop();
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    cookie.push(c)
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+}
+
 fn read_line() -> Result<String> {
     use std::io::Write;
     std::io::stdout().flush().ok();
     let mut s = String::new();
     std::io::stdin().read_line(&mut s)?;
     Ok(s.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cookie_paste_accepts_more_than_the_terminal_line_limit() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+        let cookie = format!("SAPISID={};", "a".repeat(65536));
+        let mut events = [
+            Event::Paste(cookie.clone()),
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ]
+        .into_iter();
+        assert_eq!(
+            read_cookie_events(|| Ok(events.next().unwrap())).unwrap(),
+            cookie
+        );
+    }
+
+    #[test]
+    fn cookie_input_can_be_cancelled() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+        let err = read_cookie_events(|| {
+            Ok(Event::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            )))
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "cookie input cancelled");
+    }
+
+    #[test]
+    fn cookie_input_handles_unbracketed_paste_and_backspace() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+        let cookie = "a".repeat(8192);
+        let mut keys = cookie.chars().map(KeyCode::Char).chain([
+            KeyCode::Char('x'),
+            KeyCode::Backspace,
+            KeyCode::Enter,
+        ]);
+        let result = read_cookie_events(|| {
+            Ok(Event::Key(KeyEvent::new(
+                keys.next().unwrap(),
+                KeyModifiers::NONE,
+            )))
+        })
+        .unwrap();
+        assert_eq!(result, cookie);
+    }
+
+    #[test]
+    fn browser_auth_accepts_an_explicit_browser_without_treating_it_as_a_query() {
+        let cli = Cli::try_parse_from(["ytkew", "--auth", "browser", "brave"]).unwrap();
+        assert!(cli.query.is_empty());
+        assert_eq!(cli.auth.unwrap(), ["browser", "brave"]);
+    }
+
+    #[test]
+    fn removed_browser_flag_is_rejected() {
+        assert!(
+            Cli::try_parse_from(["ytkew", "--auth", "browser", "--from-browser", "brave"]).is_err()
+        );
+    }
+
+    #[test]
+    fn firefox_auth_remains_the_default() {
+        let cli = Cli::try_parse_from(["ytkew", "--auth", "browser"]).unwrap();
+        assert_eq!(cli.auth.unwrap(), ["browser"]);
+    }
+
+    #[tokio::test]
+    async fn browser_selection_rejects_other_auth_methods_before_writing() {
+        let nonexistent =
+            std::env::temp_dir().join(format!("ytkew-invalid-auth-{}", std::process::id()));
+        let err = run_auth("cookie", Some("brave"), &nonexistent)
+            .await
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("only accepted after --auth browser"));
+        assert!(!nonexistent.exists());
+    }
+
+    #[test]
+    fn search_terms_are_unchanged_without_auth() {
+        let cli = Cli::try_parse_from(["ytkew", "boards", "of", "canada"]).unwrap();
+        assert!(cli.auth.is_none());
+        assert_eq!(cli.query, ["boards", "of", "canada"]);
+    }
+
+    #[test]
+    fn cookie_and_oauth_keep_their_single_argument_syntax() {
+        for method in ["cookie", "oauth"] {
+            let cli = Cli::try_parse_from(["ytkew", "--auth", method]).unwrap();
+            assert_eq!(cli.auth.unwrap(), [method]);
+        }
+    }
 }

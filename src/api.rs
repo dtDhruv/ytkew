@@ -31,6 +31,78 @@ const NEEDS_AUTH: &str =
     "not signed in -- run `ytkew --auth cookie` or `ytkew --auth oauth` to reach your library";
 const OFFLINE: &str = "no connection to YouTube Music";
 
+/// Keep the transport used by credential setup and normal playback identical.
+/// YouTube resets HTTP/2 streams from this client on some connections.
+pub(crate) fn http_client() -> Result<ytmapi_rs::Client> {
+    let client = reqwest::Client::builder().http1_only().build()?;
+    Ok(ytmapi_rs::Client::new_from_reqwest_client(client))
+}
+
+pub(crate) async fn cookie_session(cookie: &str) -> Result<YtMusic<BrowserToken>> {
+    Ok(ytmapi_rs::YtMusicBuilder::new_with_client(http_client()?)
+        .with_browser_token_cookie(cookie.to_owned())
+        .build()
+        .await?)
+}
+
+pub(crate) async fn validate_cookie_session(cookie: &str) -> Result<()> {
+    let yt = cookie_session(cookie).await?;
+    let session = yt
+        .query(AccountMenuQuery)
+        .await
+        .context("checking the signed-in account")?;
+    anyhow::ensure!(
+        session.0,
+        "browser session is signed out -- sign in at music.youtube.com and retry"
+    );
+    Ok(())
+}
+
+// Account-menu validation adapted from WakaTaira/ytmusic-tui (MIT).
+// See licenses/ytmusic-tui-MIT.txt. Playlist parsing is not a login check:
+// an empty library is valid, and unrelated parser changes must not reject auth.
+struct AccountMenuQuery;
+
+#[derive(Debug)]
+struct SessionStatus(bool);
+
+impl ytmapi_rs::query::Query<BrowserToken> for AccountMenuQuery {
+    type Output = SessionStatus;
+    type Method = ytmapi_rs::query::PostMethod;
+}
+
+impl ytmapi_rs::query::PostQuery for AccountMenuQuery {
+    fn header(&self) -> serde_json::Map<String, serde_json::Value> {
+        serde_json::Map::new()
+    }
+
+    fn params(&self) -> Vec<(&str, std::borrow::Cow<'_, str>)> {
+        Vec::new()
+    }
+
+    fn path(&self) -> &str {
+        "account/account_menu"
+    }
+}
+
+impl ytmapi_rs::parse::ParseFrom<AccountMenuQuery> for SessionStatus {
+    fn parse_from(
+        response: ytmapi_rs::parse::ProcessedResult<AccountMenuQuery>,
+    ) -> ytmapi_rs::Result<Self> {
+        let value = ytmapi_rs::json::from_json(response.json)?;
+        Ok(Self(session_is_signed_in(&value)))
+    }
+}
+
+fn session_is_signed_in(response: &serde_json::Value) -> bool {
+    response.pointer("/actions/0/openPopupAction/popup/multiPageMenuRenderer/header/activeAccountHeaderRenderer/accountName/runs")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|runs| runs.iter().any(|run| {
+            run.get("text").and_then(serde_json::Value::as_str)
+                .is_some_and(|text| !text.trim().is_empty())
+        }))
+}
+
 /// Ceiling on the items a single paged query will pull. YouTube hands back
 /// roughly a hundred per page, so this allows about fifty round trips -- well
 /// past any real playlist, but bounded, because a continuation token that
@@ -112,7 +184,14 @@ impl Api {
         }
 
         if cookie.exists() {
-            match YtMusic::from_cookie_file(&cookie).await {
+            let session = async {
+                let header = tokio::fs::read_to_string(&cookie)
+                    .await
+                    .context("reading cookie.txt")?;
+                cookie_session(&header).await
+            }
+            .await;
+            match session {
                 Ok(yt) => {
                     return (
                         Self {
@@ -148,7 +227,15 @@ impl Api {
         // Failing here means no network. Start anyway in an offline state --
         // the user can still see the UI and read the error, and retrying is
         // just a restart away.
-        match YtMusic::new_unauthenticated().await {
+        let session = async {
+            Ok::<_, anyhow::Error>(
+                ytmapi_rs::YtMusicBuilder::new_with_client(http_client()?)
+                    .build()
+                    .await?,
+            )
+        }
+        .await;
+        match session {
             Ok(yt) => Self {
                 backend: Backend::NoAuth(yt),
             },
@@ -164,7 +251,9 @@ impl Api {
             .with_context(|| format!("reading {}", path.display()))?;
         let token: OAuthToken =
             serde_json::from_str(&raw).context("oauth.json is not a valid saved token")?;
-        let mut yt = YtMusic::from_auth_token(token);
+        let mut yt = ytmapi_rs::YtMusicBuilder::new_with_client(http_client()?)
+            .with_auth_token(token)
+            .build()?;
         // Access tokens last minutes, so refresh on load and persist the new
         // one; otherwise every restart would fail its first query.
         if let Ok(fresh) = yt.refresh_token().await {
@@ -626,6 +715,33 @@ pub fn cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_check_accepts_a_signed_in_account_header() {
+        let response = serde_json::json!({"actions":[{"openPopupAction":{"popup":{
+            "multiPageMenuRenderer":{"header":{"activeAccountHeaderRenderer":{
+                "accountName":{"runs":[{"text":"Test account"}]}
+            }}}
+        }}}]});
+        assert!(session_is_signed_in(&response));
+    }
+
+    #[test]
+    fn session_check_rejects_a_logged_out_http_200_response() {
+        assert!(!session_is_signed_in(
+            &serde_json::json!({"responseContext":{},"actions":[]})
+        ));
+    }
+
+    #[test]
+    fn session_check_rejects_an_empty_account_name() {
+        let response = serde_json::json!({"actions":[{"openPopupAction":{"popup":{
+            "multiPageMenuRenderer":{"header":{"activeAccountHeaderRenderer":{
+                "accountName":{"runs":[{"text":""}]}
+            }}}
+        }}}]});
+        assert!(!session_is_signed_in(&response));
+    }
 
     /// A stream of canned pages, standing in for YouTube's continuations.
     fn pages<T: Clone>(

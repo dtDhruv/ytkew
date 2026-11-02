@@ -95,9 +95,8 @@ sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 
 ## Build features
 
-`browser-cookies` is on by default and pulls in a bundled SQLite so
-[`ytkew --auth browser`](/ytkew/start/signing-in/) can read the Firefox cookie
-store. For a leaner build without it:
+Automatic browser login is enabled by default. If you don't need it, you can
+leave out the browser cookie readers:
 
 ```sh
 cargo build --release --no-default-features
