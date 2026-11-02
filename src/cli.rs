@@ -93,12 +93,7 @@ pub async fn run_auth(
             println!("  3. Click any request to music.youtube.com.");
             println!("  4. Under Request Headers, copy the entire 'Cookie' value.");
             println!();
-            println!("Paste it here and press enter:");
-
-            let mut cookie = String::new();
-            std::io::stdin()
-                .read_line(&mut cookie)
-                .context("reading cookie from stdin")?;
+            let cookie = read_cookie()?;
             let cookie = cookie.trim();
             if cookie.is_empty() {
                 anyhow::bail!("no cookie provided");
@@ -399,6 +394,59 @@ fn write_secret(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn read_cookie() -> Result<String> {
+    use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+    use std::io::{IsTerminal, Write};
+
+    if !std::io::stdin().is_terminal() {
+        let mut cookie = String::new();
+        std::io::stdin().read_line(&mut cookie)?;
+        return Ok(cookie);
+    }
+
+    // Canonical terminal input truncates long cookies before read_line sees them.
+    let tty = art::terminal::open_tty().context("opening terminal for cookie input")?;
+    let raw = art::terminal::RawMode::enable(&tty).context("enabling cookie input")?;
+    crossterm::execute!(std::io::stdout(), EnableBracketedPaste)?;
+    print!("Paste it here and press enter (input hidden):\r\n");
+    let result = std::io::stdout()
+        .flush()
+        .map_err(anyhow::Error::from)
+        .and_then(|()| read_cookie_events(crossterm::event::read));
+    let cleanup = crossterm::execute!(std::io::stdout(), DisableBracketedPaste);
+    drop(raw);
+    println!();
+    let cookie = result?;
+    cleanup?;
+    Ok(cookie)
+}
+
+fn read_cookie_events(
+    mut read: impl FnMut() -> std::io::Result<crossterm::event::Event>,
+) -> Result<String> {
+    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+    let mut cookie = String::new();
+    loop {
+        match read()? {
+            Event::Paste(text) => cookie.push_str(&text),
+            Event::Key(key) if key.kind != KeyEventKind::Release => match key.code {
+                KeyCode::Enter => return Ok(cookie),
+                KeyCode::Char('c' | 'd') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    anyhow::bail!("cookie input cancelled");
+                }
+                KeyCode::Backspace => {
+                    cookie.pop();
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    cookie.push(c)
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+}
+
 fn read_line() -> Result<String> {
     use std::io::Write;
     std::io::stdout().flush().ok();
@@ -410,6 +458,53 @@ fn read_line() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cookie_paste_accepts_more_than_the_terminal_line_limit() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+        let cookie = format!("SAPISID={};", "a".repeat(65536));
+        let mut events = [
+            Event::Paste(cookie.clone()),
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ]
+        .into_iter();
+        assert_eq!(
+            read_cookie_events(|| Ok(events.next().unwrap())).unwrap(),
+            cookie
+        );
+    }
+
+    #[test]
+    fn cookie_input_can_be_cancelled() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+        let err = read_cookie_events(|| {
+            Ok(Event::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            )))
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "cookie input cancelled");
+    }
+
+    #[test]
+    fn cookie_input_handles_unbracketed_paste_and_backspace() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+        let cookie = "a".repeat(8192);
+        let mut keys = cookie.chars().map(KeyCode::Char).chain([
+            KeyCode::Char('x'),
+            KeyCode::Backspace,
+            KeyCode::Enter,
+        ]);
+        let result = read_cookie_events(|| {
+            Ok(Event::Key(KeyEvent::new(
+                keys.next().unwrap(),
+                KeyModifiers::NONE,
+            )))
+        })
+        .unwrap();
+        assert_eq!(result, cookie);
+    }
 
     #[test]
     fn browser_auth_accepts_an_explicit_browser_without_treating_it_as_a_query() {
