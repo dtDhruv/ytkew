@@ -60,8 +60,9 @@ test run will happily save a volume of zero over your real config.
 
 ### Feature flags
 
-`browser-cookies` is on by default and pulls in a bundled SQLite for reading
-the Firefox cookie store. Both configurations have to build and lint clean:
+`browser-cookies` is on by default. It enables browser login, including
+`ytkew --auth browser brave`, and pulls in rookie and bundled SQLite. Both
+configurations have to build and lint clean:
 
 ```sh
 cargo clippy --all-targets -- -D warnings
@@ -79,7 +80,7 @@ cargo clippy --no-default-features --all-targets -- -D warnings
 | `src/api.rs`, `src/model.rs` | YouTube Music, normalised into one `Track` type |
 | `src/player.rs`, `src/queue.rs` | mpv over JSON IPC, and the play order |
 | `src/config/` | `Config` is the user's file and is never written; `State` is what the app remembers |
-| `src/browser.rs` | reading an existing login out of the Firefox cookie store |
+| `src/browser.rs` | reading an existing login from a browser |
 | `docs/` | the documentation site, published to GitHub Pages |
 
 `cargo doc --open` renders the architecture notes in `src/lib.rs`.

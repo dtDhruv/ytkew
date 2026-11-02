@@ -1,53 +1,79 @@
 ---
 title: Signing in
-description: Three ways to give ytkew access to your library, and which to pick.
+description: Connect your YouTube Music account to see your library and liked songs.
 ---
 
-**Search, radio, playlists by ID and lyrics need no credentials at all.** Only
-your own library — playlists, liked songs, liking tracks — does.
-
-```sh
-ytkew --auth browser     # lifts an existing Firefox login
-ytkew --auth cookie      # paste a Cookie header from any browser
-ytkew --auth oauth       # Google Cloud "TVs and Limited Input devices" client
-```
+You can search and play music without signing in. Connect your account to
+browse your library, see your liked songs, and like tracks from ytkew.
 
 ## From the browser
 
-`--auth browser` reads the YouTube cookies straight out of your Firefox
-profile, so signing in at music.youtube.com is all the setup there is.
+First, sign in at [music.youtube.com](https://music.youtube.com) in your browser.
+Then tell ytkew which browser you use:
 
-It searches native, snap and flatpak Firefox plus LibreWolf, Waterfox and Zen.
-It reads a *snapshot* rather than the live database, since Firefox keeps it
-open in WAL mode; deletes that snapshot afterwards; and checks the cookies
-against the API before writing anything.
+```sh
+ytkew --auth browser brave
+```
 
-Chromium is not supported. It encrypts cookie values with a key held in the
-desktop keyring, which needs both a keyring client and AES-GCM to undo — a
-different job. Use `--auth cookie` instead.
+Replace `brave` with `chrome`, `chromium`, `firefox`, `librewolf`, `zen`,
+`edge`, `vivaldi`, `opera`, `opera_gx`, or `arc`. Safari is supported on macOS.
+
+If you leave out the name, ytkew looks for a Firefox login:
+
+```sh
+ytkew --auth browser
+```
+
+You don't need to paste a cookie. ytkew reads the browser's saved session,
+checks that you're signed in, and saves it for the next time you open the player.
+If the check fails, it keeps your previous login.
+
+Chrome, Brave, and other Chromium-based browsers may need your desktop keyring
+to be unlocked. If ytkew can't read the cookies, close the browser and try
+again. You can also use the manual method below.
+
+Once setup succeeds, start the player:
+
+```sh
+ytkew
+```
+
+Cookies can expire. If your library stops loading, sign in again in your
+browser and rerun the same auth command.
 
 ## Pasting a header
 
-1. Open music.youtube.com, signed in.
-2. Open devtools and pick any request to `music.youtube.com`.
-3. Copy the whole `Cookie` **request** header.
-4. Run `ytkew --auth cookie` and paste it.
+If automatic login doesn't work with your browser:
 
-It is validated against the API before it is saved, so a bad paste fails
-immediately rather than looking fine until you open your library.
+1. Open music.youtube.com and make sure you're signed in.
+2. Open Developer Tools, select **Network**, and reload the page.
+3. Select a request to `music.youtube.com` and find **Cookie** under its request headers.
+4. Run `ytkew --auth cookie`, paste the Cookie value when prompted, and press Enter.
+
+Paste only the value, without `Cookie:` or surrounding quotes. ytkew checks
+the session before saving it.
+
+To check what ytkew can access, run:
+
+```sh
+ytkew --diagnose
+```
+
+The output shows whether ytkew loaded credentials and whether it can read
+your library. It doesn't print the cookies themselves.
 
 ## OAuth
 
-`--auth oauth` runs a device flow, but needs a Google Cloud OAuth client of
-type *TVs and Limited Input devices*, which you have to create yourself. Its
-tokens also expire and are refreshed on load. Cookie auth is easier and does
-not expire on a timer.
+```sh
+ytkew --auth oauth
+```
+
+This needs a Google Cloud OAuth client of type *TVs and Limited Input devices*.
+You'll be asked for its client ID and secret, then given a link to finish
+signing in. Most users should use browser login instead.
 
 :::danger
-A YouTube Music cookie header **authenticates as you**. ytkew writes it to
-`~/.config/ytkew/cookie.txt` with owner-only permissions and never sends it
-anywhere but Google.
-
-Never paste one into a bug report. If one leaks, sign out of Google
-everywhere — that revokes it.
+Your cookies give access to your account. ytkew stores them in
+`~/.config/ytkew/cookie.txt`, readable only by your user. Don't paste cookies
+into chat, bug reports, or screenshots.
 :::

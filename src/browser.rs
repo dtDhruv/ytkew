@@ -3,10 +3,10 @@
 //! Copying a Cookie header out of devtools works but is fiddly enough that
 //! people get it wrong, so this reads the same cookies straight from disk.
 //!
-//! Firefox only. Its store is plain SQLite, so this is a query. Chromium
-//! encrypts cookie values with a key held in the desktop keyring, which needs
-//! both a keyring client and AES-GCM to undo -- worth doing, but not the same
-//! job. `ytkew --auth cookie` still takes a pasted header from any browser.
+//! Firefox-family discovery keeps the existing SQLite snapshot reader.
+//! Explicit browser selection uses rookie, including desktop-keyring support
+//! for Chromium browsers. Browser dispatch and cookie filtering are adapted
+//! from WakaTaira/ytmusic-tui's auth_cli.rs (MIT); see licenses/ytmusic-tui-MIT.txt.
 
 use anyhow::{bail, Result};
 use std::path::PathBuf;
@@ -34,7 +34,107 @@ const WANTED: &[&str] = &[
     "PREF",
     "VISITOR_INFO1_LIVE",
     "YSC",
+    "SIDCC",
+    "__Secure-3PSIDCC",
+    "__Secure-1PSIDCC",
 ];
+
+#[cfg(feature = "browser-cookies")]
+const SUPPORTED_BROWSERS: &str = "firefox, librewolf, zen, chrome, chromium, brave, edge, vivaldi, opera, opera_gx, arc, safari (macOS only)";
+
+#[cfg(feature = "browser-cookies")]
+type CookieReader = fn(Option<Vec<String>>) -> rookie::Result<Vec<rookie::enums::Cookie>>;
+
+#[cfg(feature = "browser-cookies")]
+fn browser_reader(name: &str) -> Result<CookieReader> {
+    Ok(match name.trim().to_ascii_lowercase().as_str() {
+        "firefox" | "ff" => rookie::firefox,
+        "librewolf" => rookie::librewolf,
+        "zen" => rookie::zen,
+        "chrome" | "google-chrome" => rookie::chrome,
+        "chromium" | "chromium-browser" => rookie::chromium,
+        "brave" | "brave-browser" => rookie::brave,
+        "edge" | "msedge" | "microsoft-edge" => rookie::edge,
+        "vivaldi" => rookie::vivaldi,
+        "opera" => rookie::opera,
+        "opera_gx" | "opera-gx" | "operagx" => rookie::opera_gx,
+        "arc" => rookie::arc,
+        #[cfg(target_os = "macos")]
+        "safari" => rookie::safari,
+        #[cfg(not(target_os = "macos"))]
+        "safari" => bail!("Safari cookie extraction is only supported on macOS"),
+        _ => bail!("unsupported browser {name:?}; supported: {SUPPORTED_BROWSERS}"),
+    })
+}
+
+/// Read the selected browser's YouTube login without printing cookie values.
+pub fn extract_from_browser(name: &str) -> Result<String> {
+    #[cfg(feature = "browser-cookies")]
+    {
+        let domains = Some(vec!["youtube.com".to_owned()]);
+        let firefox =
+            name.trim().eq_ignore_ascii_case("firefox") || name.trim().eq_ignore_ascii_case("ff");
+        let result = browser_reader(name)?(domains);
+        // Browser errors may include decrypted data. Give recovery steps without
+        // forwarding the extractor's raw error or cookie values to the terminal.
+        let cookies = match result {
+            Ok(cookies) => cookies,
+            Err(_) if firefox => return firefox_cookie_fallback(),
+            Err(_) => bail!(
+                "could not read cookies from {name}; check that the browser is installed, \
+             unlock your desktop keyring, or use `ytkew --auth cookie`"
+            ),
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+        let header = header_from_cookies(cookies, now);
+        if header.is_err() && firefox {
+            return firefox_cookie_fallback();
+        }
+        header
+    }
+    #[cfg(not(feature = "browser-cookies"))]
+    {
+        let _ = name;
+        bail!("this build has the `browser-cookies` feature disabled -- use `ytkew --auth cookie`")
+    }
+}
+
+#[cfg(feature = "browser-cookies")]
+fn header_from_cookies(cookies: Vec<rookie::enums::Cookie>, now: u64) -> Result<String> {
+    let mut pairs = std::collections::BTreeMap::new();
+    for cookie in cookies {
+        let domain = cookie.domain.trim_start_matches('.');
+        if !(domain == "youtube.com" || domain.ends_with(".youtube.com"))
+            || !WANTED.contains(&cookie.name.as_str())
+            || cookie.value.is_empty()
+            || cookie
+                .expires
+                .is_some_and(|expires| expires != 0 && expires <= now)
+        {
+            continue;
+        }
+        if !cookie.value.is_ascii() || cookie.value.contains(['\r', '\n', ';']) {
+            bail!("browser returned an invalid cookie value; sign in again and retry");
+        }
+        pairs.entry(cookie.name).or_insert(cookie.value);
+    }
+    if !pairs.contains_key("SAPISID") {
+        let signing_cookie = pairs
+            .get("__Secure-3PAPISID")
+            .or_else(|| pairs.get("__Secure-1PAPISID"))
+            .cloned()
+            .context("no SAPISID cookie -- sign in at music.youtube.com in the selected browser")?;
+        pairs.insert("SAPISID".into(), signing_cookie);
+    }
+    // ytmapi-rs splits SAPISID at the next semicolon, including when it is last.
+    Ok(pairs
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value};"))
+        .collect::<Vec<_>>()
+        .join(" "))
+}
 
 /// A profile that yielded a usable cookie header.
 pub struct Found {
@@ -52,17 +152,32 @@ pub fn profiles() -> Vec<PathBuf> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();
     };
-    let roots = [
-        home.join(".mozilla/firefox"),
-        home.join("snap/firefox/common/.mozilla/firefox"),
-        home.join(".var/app/org.mozilla.firefox/.mozilla/firefox"),
+    let mut roots = firefox_roots(&home).to_vec();
+    roots.extend([
         home.join(".librewolf"),
         home.join(".var/app/io.gitlab.librewolf-community/.librewolf"),
         home.join(".waterfox"),
         home.join(".zen"),
-        // macOS, for anyone building there.
+    ]);
+    scan_profiles(roots)
+}
+
+fn firefox_roots(home: &std::path::Path) -> [PathBuf; 5] {
+    [
+        home.join(".mozilla/firefox"),
+        home.join(".config/mozilla/firefox"),
+        home.join("snap/firefox/common/.mozilla/firefox"),
+        home.join(".var/app/org.mozilla.firefox/.mozilla/firefox"),
         home.join("Library/Application Support/Firefox/Profiles"),
-    ];
+    ]
+}
+
+#[cfg(any(feature = "browser-cookies", test))]
+fn firefox_profiles_in(home: &std::path::Path) -> Vec<PathBuf> {
+    scan_profiles(firefox_roots(home))
+}
+
+fn scan_profiles(roots: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     let mut found = Vec::new();
     for root in roots {
         let Ok(entries) = std::fs::read_dir(&root) else {
@@ -88,7 +203,17 @@ pub fn profiles() -> Vec<PathBuf> {
 /// Read YouTube cookies from every profile and return the first usable set.
 #[cfg(feature = "browser-cookies")]
 pub fn find_cookies() -> Result<Found> {
-    let profiles = profiles();
+    find_cookies_in_profiles(profiles())
+}
+
+#[cfg(feature = "browser-cookies")]
+fn firefox_cookie_fallback() -> Result<String> {
+    let home = dirs::home_dir().context("could not locate the Firefox profile directory")?;
+    find_cookies_in_profiles(firefox_profiles_in(&home)).map(|found| found.header)
+}
+
+#[cfg(feature = "browser-cookies")]
+fn find_cookies_in_profiles(profiles: Vec<PathBuf>) -> Result<Found> {
     if profiles.is_empty() {
         bail!("no Firefox profile found -- use `ytkew --auth cookie` to paste a header instead");
     }
@@ -218,5 +343,119 @@ mod tests {
     fn profile_discovery_never_panics_without_a_browser() {
         // Returns empty rather than erroring when no browser is installed.
         let _ = profiles();
+    }
+
+    #[test]
+    fn firefox_discovery_finds_modern_profiles_without_searching_other_browsers() {
+        let home =
+            std::env::temp_dir().join(format!("ytkew-firefox-discovery-{}", std::process::id()));
+        let firefox = home.join(".config/mozilla/firefox/default-release");
+        let librewolf = home.join(".librewolf/default");
+        for profile in [&firefox, &librewolf] {
+            std::fs::create_dir_all(profile).unwrap();
+            std::fs::write(profile.join("cookies.sqlite"), []).unwrap();
+        }
+        let found = firefox_profiles_in(&home);
+        std::fs::remove_dir_all(home).unwrap();
+        assert_eq!(found, vec![firefox]);
+    }
+
+    #[cfg(feature = "browser-cookies")]
+    #[test]
+    fn browser_names_and_aliases_are_recognized() {
+        for name in [
+            "firefox",
+            "librewolf",
+            "zen",
+            "chrome",
+            "chromium",
+            "brave",
+            "edge",
+            "vivaldi",
+            "opera",
+            "opera_gx",
+            "arc",
+            " BRAVE ",
+            "google-chrome",
+            "chromium-browser",
+            "msedge",
+            "opera-gx",
+        ] {
+            assert!(browser_reader(name).is_ok(), "{name}");
+        }
+        assert!(browser_reader("not-a-browser").is_err());
+    }
+
+    #[cfg(feature = "browser-cookies")]
+    fn cookie(domain: &str, name: &str, value: &str) -> rookie::enums::Cookie {
+        rookie::enums::Cookie {
+            domain: domain.into(),
+            path: "/".into(),
+            name: name.into(),
+            value: value.into(),
+            secure: true,
+            expires: None,
+            http_only: true,
+            same_site: 0,
+        }
+    }
+
+    #[cfg(feature = "browser-cookies")]
+    #[test]
+    fn extracted_header_filters_domains_names_empty_and_expired_cookies() {
+        let mut expired = cookie(".youtube.com", "SID", "expired");
+        expired.expires = Some(1);
+        let header = header_from_cookies(
+            vec![
+                cookie("evilyoutube.com", "SAPISID", "wrong-domain"),
+                cookie(".youtube.com", "SAPISID", "good"),
+                cookie("music.youtube.com", "SID", "session"),
+                cookie(".youtube.com", "SAPISID", "duplicate"),
+                cookie(".youtube.com", "NID", "unrelated"),
+                cookie(".youtube.com", "PREF", ""),
+                expired,
+            ],
+            100,
+        )
+        .unwrap();
+        assert_eq!(header, "SAPISID=good; SID=session;");
+    }
+
+    #[cfg(feature = "browser-cookies")]
+    #[test]
+    fn secure_sapisid_can_be_used_when_plain_cookie_is_missing() {
+        let header = header_from_cookies(
+            vec![cookie(".youtube.com", "__Secure-3PAPISID", "signed-in")],
+            100,
+        )
+        .unwrap();
+        assert!(header.contains("SAPISID=signed-in;"));
+        assert!(header.ends_with(';'));
+    }
+
+    #[cfg(feature = "browser-cookies")]
+    #[test]
+    fn missing_sign_in_and_malformed_values_are_rejected() {
+        assert!(header_from_cookies(vec![cookie(".youtube.com", "SID", "only-sid")], 100).is_err());
+        assert!(
+            header_from_cookies(vec![cookie(".youtube.com", "SAPISID", "bad\r\nvalue")], 100)
+                .is_err()
+        );
+    }
+
+    #[cfg(all(feature = "browser-cookies", not(target_os = "macos")))]
+    #[test]
+    fn safari_reports_its_platform_requirement() {
+        assert!(extract_from_browser("safari")
+            .unwrap_err()
+            .to_string()
+            .contains("macOS"));
+    }
+
+    #[cfg(not(feature = "browser-cookies"))]
+    #[test]
+    fn browser_extraction_reports_disabled_feature() {
+        let err = extract_from_browser("brave").unwrap_err();
+        assert!(err.to_string().contains("browser-cookies"));
     }
 }

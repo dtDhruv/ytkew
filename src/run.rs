@@ -24,8 +24,9 @@ const FRAME: Duration = Duration::from_millis(33);
 pub async fn run(cli: Cli) -> Result<()> {
     let cfg_dir = api::config_dir();
 
-    if let Some(method) = cli.auth.as_deref() {
-        return run_auth(method, &cfg_dir).await;
+    if let Some(auth) = &cli.auth {
+        let method = auth.first().context("--auth requires a method")?;
+        return run_auth(method, auth.get(1).map(String::as_str), &cfg_dir).await;
     }
     if cli.diagnose {
         return run_diagnose(&cfg_dir).await;

@@ -23,7 +23,13 @@ Four moving parts, deliberately separated.
 | `src/api.rs`, `src/model.rs` | YouTube Music, normalised into one `Track` |
 | `src/player.rs`, `src/queue.rs` | mpv over JSON IPC, and the play order |
 | `src/config/` | `Config` is the user's file; `State` is what the app remembers |
-| `src/browser.rs` | reading an existing login out of the Firefox cookie store |
+| `src/browser.rs` | reading a saved YouTube login from a browser |
+
+Browser cookie extraction uses [rookie](https://crates.io/crates/rookie).
+The browser dispatcher, cookie filtering, and account check were adapted from
+[ytmusic-tui](https://github.com/WakaTaira/ytmusic-tui); its MIT notice is kept
+in `licenses/ytmusic-tui-MIT.txt`. Firefox also has a profile scanner for
+installations rookie doesn't find.
 
 `cargo doc --open` renders the architecture notes in `src/lib.rs`.
 
